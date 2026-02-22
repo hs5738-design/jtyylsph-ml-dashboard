@@ -258,8 +258,7 @@ with tab1:
         st.success("Training Complete")
 
         st.dataframe(pd.DataFrame(leaderboard))
-
-
+        
 # =========================================================
 # PREDICTION TAB
 # =========================================================
@@ -268,45 +267,58 @@ with tab2:
 
     st.header("Manual Prediction")
 
+    # Ensure feature names are strings for Streamlit labels
+    feature_names_str = [str(col) for col in feature_names]
+
     inputs = []
 
-    for f in feature_names:
+    # Generate input widgets dynamically
+    for f in feature_names_str:
+        # Default to 0.0 for numeric input
         val = st.number_input(f, value=0.0)
         inputs.append(val)
 
-    model_name = st.selectbox("Model", list(trained_models.keys()))
+    # Model selection dropdown
+    model_name = st.selectbox(
+        "Select Model",
+        list(trained_models.keys()) if trained_models else ["No models trained"]
+    )
 
     if st.button("Predict"):
 
-        model = trained_models.get(model_name)
-
-        if model is None:
-            st.warning("Train models first.")
+        if not trained_models:
+            st.warning("⚠️ Train models first.")
+        elif model_name not in trained_models:
+            st.warning("⚠️ Select a valid trained model.")
         else:
 
+            model = trained_models[model_name]
+
+            # Convert inputs to DataFrame with correct column names
             input_df = pd.DataFrame([inputs], columns=feature_names)
 
+            # Make prediction
             pred = model.predict(input_df)[0]
 
+            # Probability / risk score
             prob = (
                 model.predict_proba(input_df)[0][1]
-                if hasattr(model, "predict_proba")
-                else None
+                if hasattr(model, "predict_proba") else None
             )
 
             st.success(f"Prediction: {pred}")
 
-            if prob:
+            if prob is not None:
                 st.metric("Confidence", f"{prob:.2f}")
                 st.metric("Risk Score", f"{prob*100:.1f}")
 
+            # Log prediction
             log_prediction(
-                input_df.to_dict(),
+                input_df.to_dict(orient="records")[0],  # single record
                 pred,
                 prob,
                 model_name
             )
-
 
 # =========================================================
 # MONITORING TAB
