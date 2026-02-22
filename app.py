@@ -213,6 +213,7 @@ tabs = st.tabs([
 # TRAINING
 # =========================================================
 
+
 with tabs[0]:
 
     if st.button("Train All Models"):
@@ -232,16 +233,53 @@ with tabs[0]:
             preds = model.predict(X_test)
 
             acc = accuracy_score(y_test, preds)
-            metrics = {"accuracy": acc}
+            prec = precision_score(y_test, preds, average="weighted")
+            rec = recall_score(y_test, preds, average="weighted")
+            f1 = f1_score(y_test, preds, average="weighted")
+
+            metrics = {
+                "accuracy": acc,
+                "precision": prec,
+                "recall": rec,
+                "f1": f1
+            }
 
             st.session_state.trained_models[name] = model
+            st.session_state.leaderboard.append({"Model": name, **metrics})
+
             save_model_version(model, name, metrics)
 
             if acc > best_score:
                 best_score = acc
                 st.session_state.best_model = model
 
+        st.session_state.training_done = True
         st.success("Training Complete")
+
+    # ---------------------------------------------------
+    # DISPLAY RESULTS PERSISTENTLY
+    # ---------------------------------------------------
+
+    if "training_done" in st.session_state:
+
+        st.subheader("Model Performance")
+
+        df_lb = pd.DataFrame(st.session_state.leaderboard)
+        st.dataframe(df_lb)
+
+        # Accuracy chart
+        fig, ax = plt.subplots()
+        ax.bar(df_lb["Model"], df_lb["accuracy"])
+        ax.set_title("Accuracy Comparison")
+        st.pyplot(fig)
+
+        # Confusion matrix for best model
+        if st.session_state.best_model:
+            preds = st.session_state.best_model.predict(X_test)
+            cm = confusion_matrix(y_test, preds)
+            fig_cm, ax_cm = plt.subplots()
+            ConfusionMatrixDisplay(cm).plot(ax=ax_cm)
+            st.pyplot(fig_cm)
 
 # =========================================================
 # REGISTRY DASHBOARD
