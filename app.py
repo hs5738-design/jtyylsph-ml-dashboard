@@ -1,10 +1,11 @@
+
 # =========================================================
-# JTYYLSPH Intelligent Classification Platform V3
-# Enterprise / MLOps Architecture
+# JTYYLSPH Intelligent Classification Platform V5 ENTERPRISE
+# Unified: V3 AutoML + V4.5 PRO MLOps Architecture
 # =========================================================
 
 import streamlit as st
-st.set_page_config(page_title="JTYYLSPH AI Platform V3", layout="wide")
+st.set_page_config(page_title="JTYYLSPH AI Platform V5 ENTERPRISE", layout="wide")
 
 import pandas as pd
 import numpy as np
@@ -22,44 +23,65 @@ from sklearn.metrics import (
     confusion_matrix, ConfusionMatrixDisplay,
     roc_curve, auc
 )
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import label_binarize
 from scipy.stats import ks_2samp
 
-# Optional SHAP
+# Optional Libraries
+try:
+    from xgboost import XGBClassifier
+    XGB_AVAILABLE = True
+except:
+    XGB_AVAILABLE = False
+
 try:
     import shap
     SHAP_AVAILABLE = True
 except:
     SHAP_AVAILABLE = False
 
+
 # =========================================================
-# SESSION STATE INITIALIZATION
+# ENTERPRISE LOGIN
+# =========================================================
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+def login():
+    st.sidebar.subheader("🔐 Enterprise Login")
+    user = st.sidebar.text_input("Username")
+    pwd = st.sidebar.text_input("Password", type="password")
+    if st.sidebar.button("Login"):
+        if user == "admin" and pwd == "admin123":
+            st.session_state.authenticated = True
+        else:
+            st.sidebar.error("Invalid credentials")
+
+if not st.session_state.authenticated:
+    login()
+    st.stop()
+
+
+# =========================================================
+# SESSION STATE
 # =========================================================
 
 if "trained_models" not in st.session_state:
     st.session_state.trained_models = {}
-
 if "best_model" not in st.session_state:
     st.session_state.best_model = None
-
 if "leaderboard" not in st.session_state:
     st.session_state.leaderboard = []
 
-# =========================================================
-# TITLE
-# =========================================================
+LOG_FILE = "prediction_logs.jsonl"
+MODEL_REGISTRY = "model_registry.pkl"
 
-st.title("🚀 Intelligent Classification & Analytics Platform — V3")
-st.caption("Enterprise ML • AutoML • Monitoring • Explainability")
 
 # =========================================================
 # UTILITIES
 # =========================================================
-
-LOG_FILE = "prediction_logs.jsonl"
-MODEL_REGISTRY = "model_registry.pkl"
 
 def log_prediction(data, pred, prob, model_name):
     entry = {
@@ -73,32 +95,49 @@ def log_prediction(data, pred, prob, model_name):
         f.write(json.dumps(entry) + "\n")
 
 def save_model_version(model, name, metrics):
+    if os.path.exists(MODEL_REGISTRY):
+        registry = pickle.load(open(MODEL_REGISTRY, "rb"))
+    else:
+        registry = []
     record = {
+        "version": f"v{len(registry)+1}",
         "name": name,
         "timestamp": datetime.datetime.now(),
         "metrics": metrics,
         "model": model
     }
-    if os.path.exists(MODEL_REGISTRY):
-        registry = pickle.load(open(MODEL_REGISTRY, "rb"))
-    else:
-        registry = []
     registry.append(record)
     pickle.dump(registry, open(MODEL_REGISTRY, "wb"))
 
+def population_stability_index(expected, actual, buckets=10):
+    breakpoints = np.linspace(0, 1, buckets + 1)
+    expected_percents = np.histogram(expected, breakpoints)[0] / len(expected)
+    actual_percents = np.histogram(actual, breakpoints)[0] / len(actual)
+    psi = np.sum((expected_percents - actual_percents) *
+                 np.log((expected_percents + 1e-6) / (actual_percents + 1e-6)))
+    return psi
+
+
 # =========================================================
-# DATASET SIDEBAR
+# TITLE
+# =========================================================
+
+st.title("🚀 JTYYLSPH V5 ENTERPRISE AI PLATFORM")
+st.caption("AutoML • MLOps • Drift Detection • Fairness • Explainability • Deployment")
+
+
+# =========================================================
+# DATA
 # =========================================================
 
 st.sidebar.header("📂 Dataset")
-
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+
 domain = st.sidebar.selectbox(
     "Synthetic Dataset",
     ["Finance", "Healthcare", "Sports", "General"]
 )
 
-# Load or Generate Dataset
 if uploaded:
     df = pd.read_csv(uploaded)
     target_col = st.sidebar.selectbox("Target Column", df.columns)
@@ -116,16 +155,14 @@ else:
     X = pd.DataFrame(X_data)
     y = pd.Series(y_data)
 
-# Ensure column names are strings
 X.columns = [str(col) for col in X.columns]
 feature_names = list(X.columns)
-st.write("Dataset Shape:", X.shape)
 
-# Train-test split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+
 # =========================================================
-# MODELS
+# MODELS + PARAM GRIDS
 # =========================================================
 
 models = {
@@ -134,34 +171,45 @@ models = {
     "LogisticRegression": LogisticRegression(max_iter=1000),
 }
 
+if XGB_AVAILABLE:
+    models["XGBoost"] = XGBClassifier(use_label_encoder=False, eval_metric="logloss")
+
 param_grids = {
     "RandomForest": {"n_estimators": [100, 200], "max_depth": [None, 5]},
     "GradientBoosting": {"n_estimators": [100, 200], "learning_rate": [0.05, 0.1]},
 }
 
+
 # =========================================================
 # TABS
 # =========================================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tabs = st.tabs([
     "🤖 Training",
+    "📊 Model Comparison",
     "🔮 Prediction",
-    "📊 Monitoring",
+    "📁 Batch Prediction",
+    "📈 Monitoring",
+    "⚖️ Fairness",
     "🧠 Explainability",
-    "📁 Model Registry"
+    "🗂 Registry",
+    "🚀 API Export"
 ])
+
 
 # =========================================================
 # TRAINING TAB
 # =========================================================
 
-with tab1:
-    st.header("AutoML Training")
-    if st.button("Train Models"):
+with tabs[0]:
+
+    if st.button("Train All Models"):
+
         st.session_state.leaderboard = []
         best_score = 0
 
         for name, model in models.items():
+
             if name in param_grids:
                 grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=-1)
                 grid.fit(X_train, y_train)
@@ -179,7 +227,14 @@ with tab1:
             f1 = f1_score(y_test, preds, average="weighted")
             cv_scores = cross_val_score(model, X, y, cv=5)
 
-            metrics = {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1, "cv_mean": cv_scores.mean()}
+            metrics = {
+                "accuracy": acc,
+                "precision": prec,
+                "recall": rec,
+                "f1": f1,
+                "cv_mean": cv_scores.mean()
+            }
+
             st.session_state.leaderboard.append({"Model": name, **metrics})
             save_model_version(model, name, metrics)
 
@@ -187,186 +242,148 @@ with tab1:
                 best_score = acc
                 st.session_state.best_model = model
 
-            st.subheader(name)
-            st.write(metrics)
-
-            # Confusion Matrix
-            cm = confusion_matrix(y_test, preds)
-            fig_cm, ax_cm = plt.subplots()
-            ConfusionMatrixDisplay(cm).plot(ax=ax_cm)
-            st.pyplot(fig_cm)
-
-            # Multi-class ROC
-            if hasattr(model, "predict_proba"):
-                y_classes = np.unique(y)
-                if len(y_classes) == 2:
-                    probs = model.predict_proba(X_test)[:, 1]
-                    fpr, tpr, _ = roc_curve(y_test, probs)
-                    roc_auc = auc(fpr, tpr)
-                    fig, ax = plt.subplots()
-                    ax.plot(fpr, tpr, label=f"AUC {roc_auc:.2f}")
-                    ax.plot([0,1],[0,1], linestyle="--")
-                    ax.legend()
-                    st.pyplot(fig)
-                else:
-                    y_test_bin = label_binarize(y_test, classes=y_classes)
-                    probs = model.predict_proba(X_test)
-                    fig, ax = plt.subplots()
-                    for i, class_label in enumerate(y_classes):
-                        fpr, tpr, _ = roc_curve(y_test_bin[:, i], probs[:, i])
-                        roc_auc = auc(fpr, tpr)
-                        ax.plot(fpr, tpr, label=f"Class {class_label} AUC {roc_auc:.2f}")
-                    ax.plot([0,1],[0,1], linestyle="--")
-                    ax.legend()
-                    st.pyplot(fig)
+        # Stacking Ensemble
+        estimators = [(n, m) for n, m in st.session_state.trained_models.items()]
+        stack = StackingClassifier(estimators=estimators,
+                                   final_estimator=LogisticRegression())
+        stack.fit(X_train, y_train)
+        st.session_state.trained_models["StackingEnsemble"] = stack
 
         st.success("Training Complete")
-        st.dataframe(pd.DataFrame(st.session_state.leaderboard))
+
 
 # =========================================================
-# PREDICTION TAB
+# MODEL COMPARISON
 # =========================================================
 
-with tab2:
-    st.header("Manual Prediction")
-    if not st.session_state.trained_models:
-        st.info("⚠️ Train models first to enable manual prediction.")
-    else:
-        inputs = []
-        for f in feature_names:
-            if np.issubdtype(X[f].dtype, np.number):
-                val = st.number_input(label=f, value=float(X[f].mean()))
-            else:
-                val = st.text_input(label=f, value="")
-            inputs.append(val)
+with tabs[1]:
 
-        model_name = st.selectbox("Select Model", list(st.session_state.trained_models.keys()))
+    if st.session_state.leaderboard:
+
+        df_lb = pd.DataFrame(st.session_state.leaderboard)
+        st.dataframe(df_lb)
+
+        fig, ax = plt.subplots()
+        ax.bar(df_lb["Model"], df_lb["accuracy"])
+        ax.set_title("Accuracy Comparison")
+        st.pyplot(fig)
+
+        # Confusion Matrix for best model
+        model = st.session_state.best_model
+        preds = model.predict(X_test)
+        cm = confusion_matrix(y_test, preds)
+        fig_cm, ax_cm = plt.subplots()
+        ConfusionMatrixDisplay(cm).plot(ax=ax_cm)
+        st.pyplot(fig_cm)
+
+
+# =========================================================
+# MANUAL PREDICTION
+# =========================================================
+
+with tabs[2]:
+
+    if st.session_state.trained_models:
+
+        inputs = [st.number_input(f, value=float(X[f].mean())) for f in feature_names]
+        model_name = st.selectbox("Model", list(st.session_state.trained_models.keys()))
+
         if st.button("Predict"):
             model = st.session_state.trained_models[model_name]
             input_df = pd.DataFrame([inputs], columns=feature_names)
-            for f in feature_names:
-                if np.issubdtype(X[f].dtype, np.number):
-                    input_df[f] = pd.to_numeric(input_df[f], errors="coerce")
             pred = model.predict(input_df)[0]
             prob = model.predict_proba(input_df)[0][1] if hasattr(model, "predict_proba") else None
+
             st.success(f"Prediction: {pred}")
+
             if prob is not None:
                 st.metric("Confidence", f"{prob:.2f}")
                 st.metric("Risk Score", f"{prob*100:.1f}")
+
             log_prediction(input_df.to_dict(orient="records")[0], pred, prob, model_name)
 
-# =========================================================
-# MONITORING TAB
-# =========================================================
-
-with tab3:
-    st.header("Data Monitoring & Drift Detection")
-    st.write(X.describe())
-    corr = X.corr()
-    fig, ax = plt.subplots()
-    cax = ax.matshow(corr)
-    plt.colorbar(cax)
-    st.pyplot(fig)
-    st.subheader("Drift Detection")
-    col = st.selectbox("Feature", feature_names)
-    stat, p = ks_2samp(X_train[col], X_test[col])
-    if p < 0.05:
-        st.warning("⚠️ Possible Drift Detected")
-    else:
-        st.success("No significant drift")
-# =========================================================
-# EXPLAINABILITY TAB (Safe & Robust)
-# =========================================================
-
-with tab4:
-    st.header("Explainability")
-
-    if not st.session_state.trained_models:
-        st.info("⚠️ Train models first to use explainability features.")
-    else:
-        model_name = st.selectbox(
-            "Select Model",
-            list(st.session_state.trained_models.keys()),
-            key="explain_model"
-        )
-        model = st.session_state.trained_models[model_name]
-
-        st.subheader("SHAP Explainability")
-        if SHAP_AVAILABLE:
-            if st.button("Run SHAP", key="shap_button"):
-                # Use a sample if dataset is large
-                sample_X = X_test.sample(min(100, len(X_test)), random_state=42)
-                explainer = shap.Explainer(model, X_train)
-                shap_values = explainer(sample_X)
-                fig = plt.figure()
-                shap.summary_plot(shap_values, sample_X, show=False)
-                st.pyplot(fig)
-        else:
-            st.warning("SHAP not installed. Feature importance still available below.")
-
-        st.subheader("Feature Importance / Coefficients")
-
-        # Tree-based models
-        if hasattr(model, "feature_importances_"):
-            importances = model.feature_importances_
-            # Safety check
-            if len(importances) != len(feature_names):
-                st.warning(f"Cannot plot feature importances: {len(importances)} != {len(feature_names)}")
-            else:
-                fig, ax = plt.subplots()
-                ax.barh(feature_names, importances)
-                ax.set_xlabel("Importance")
-                ax.set_title(f"Feature Importance — {model_name}")
-                st.pyplot(fig)
-
-        # Linear models (Logistic Regression)
-        elif hasattr(model, "coef_"):
-            coefs = model.coef_
-            if coefs.ndim > 1:
-                coefs = np.mean(np.abs(coefs), axis=0)  # Multi-class: average across classes
-            coefs = np.atleast_1d(coefs)  # Ensure 1D array
-            if len(coefs) != len(feature_names):
-                st.warning(f"Cannot plot coefficients: {len(coefs)} != {len(feature_names)}")
-            else:
-                fig, ax = plt.subplots()
-                ax.barh(feature_names, coefs)
-                ax.set_xlabel("Coefficient Magnitude")
-                ax.set_title(f"Feature Coefficients — {model_name}")
-                st.pyplot(fig)
-
-        else:
-            st.info("Feature importance not available for this model type.")
 
 # =========================================================
-# MODEL REGISTRY TAB
+# MONITORING
 # =========================================================
 
-with tab5:
-    st.header("Model Registry")
+with tabs[4]:
+
+    feature = st.selectbox("Feature", feature_names)
+
+    psi = population_stability_index(X_train[feature], X_test[feature])
+    st.metric("PSI", round(psi,4))
+
+    stat, p = ks_2samp(X_train[feature], X_test[feature])
+    st.metric("KS p-value", round(p,4))
+
+
+# =========================================================
+# FAIRNESS
+# =========================================================
+
+with tabs[5]:
+
+    if st.session_state.best_model:
+        preds = st.session_state.best_model.predict(X_test)
+        group = pd.qcut(X_test.iloc[:,0], 2, labels=["Low","High"])
+        df_fair = pd.DataFrame({"group":group,"pred":preds})
+        rates = df_fair.groupby("group")["pred"].mean()
+        st.write("Group Positive Rates")
+        st.write(rates)
+
+        positive_rate_diff = abs(rates["High"] - rates["Low"])
+        st.metric("Demographic Parity Difference", round(positive_rate_diff,4))
+
+
+# =========================================================
+# EXPLAINABILITY
+# =========================================================
+
+with tabs[6]:
+
+    if SHAP_AVAILABLE and st.session_state.best_model:
+        sample_X = X_test.sample(min(100, len(X_test)), random_state=42)
+        explainer = shap.Explainer(st.session_state.best_model, X_train)
+        shap_values = explainer(sample_X)
+        fig = plt.figure()
+        shap.summary_plot(shap_values, sample_X, show=False)
+        st.pyplot(fig)
+
+
+# =========================================================
+# REGISTRY
+# =========================================================
+
+with tabs[7]:
+
     if os.path.exists(MODEL_REGISTRY):
         registry = pickle.load(open(MODEL_REGISTRY, "rb"))
-        rows = []
-        for r in registry:
-            rows.append({"name": r["name"], "timestamp": r["timestamp"], **r["metrics"]})
+        rows = [{"version":r["version"],"name":r["name"],"time":r["timestamp"],**r["metrics"]} for r in registry]
         st.dataframe(pd.DataFrame(rows))
-    else:
-        st.info("No models saved yet.")
+
 
 # =========================================================
-# EXPORT BEST MODEL
+# API EXPORT
 # =========================================================
 
-st.sidebar.header("Export")
-if st.sidebar.button("Download Best Model"):
-    if st.session_state.best_model is None:
-        st.sidebar.warning("⚠️ Train models first.")
-    else:
-        buffer = io.BytesIO()
-        pickle.dump(st.session_state.best_model, buffer)
-        buffer.seek(0)
-        st.sidebar.download_button(
-            "Download Best Model",
-            buffer,
-            file_name="best_model.pkl"
-        )
+with tabs[8]:
+
+    if st.session_state.best_model:
+        api_code = """
+from fastapi import FastAPI
+import pickle
+import pandas as pd
+
+app = FastAPI()
+model = pickle.load(open("best_model.pkl","rb"))
+
+@app.post("/predict")
+def predict(data: dict):
+    df = pd.DataFrame([data])
+    pred = model.predict(df)[0]
+    return {"prediction": int(pred)}
+"""
+        st.code(api_code, language="python")
+
 
