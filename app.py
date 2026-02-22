@@ -35,6 +35,19 @@ except:
     SHAP_AVAILABLE = False
 
 # =========================================================
+# SESSION STATE INITIALIZATION
+# =========================================================
+
+if "trained_models" not in st.session_state:
+    st.session_state.trained_models = {}
+
+if "best_model" not in st.session_state:
+    st.session_state.best_model = None
+
+if "leaderboard" not in st.session_state:
+    st.session_state.leaderboard = []
+
+# =========================================================
 # TITLE
 # =========================================================
 
@@ -85,9 +98,7 @@ domain = st.sidebar.selectbox(
     ["Finance", "Healthcare", "Sports", "General"]
 )
 
-# ----------------------------
 # Load or Generate Dataset
-# ----------------------------
 if uploaded:
     df = pd.read_csv(uploaded)
     target_col = st.sidebar.selectbox("Target Column", df.columns)
@@ -108,7 +119,6 @@ else:
 # Ensure column names are strings
 X.columns = [str(col) for col in X.columns]
 feature_names = list(X.columns)
-
 st.write("Dataset Shape:", X.shape)
 
 # Train-test split
@@ -129,11 +139,6 @@ param_grids = {
     "GradientBoosting": {"n_estimators": [100, 200], "learning_rate": [0.05, 0.1]},
 }
 
-trained_models = {}
-leaderboard = []
-best_model = None
-best_score = 0
-
 # =========================================================
 # TABS
 # =========================================================
@@ -153,10 +158,8 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.header("AutoML Training")
     if st.button("Train Models"):
-        leaderboard = []
-        global best_score, best_model
+        st.session_state.leaderboard = []
         best_score = 0
-        best_model = None
 
         for name, model in models.items():
             if name in param_grids:
@@ -166,7 +169,7 @@ with tab1:
             else:
                 model.fit(X_train, y_train)
 
-            trained_models[name] = model
+            st.session_state.trained_models[name] = model
 
             preds = model.predict(X_test)
 
@@ -177,12 +180,12 @@ with tab1:
             cv_scores = cross_val_score(model, X, y, cv=5)
 
             metrics = {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1, "cv_mean": cv_scores.mean()}
-            leaderboard.append({"Model": name, **metrics})
+            st.session_state.leaderboard.append({"Model": name, **metrics})
             save_model_version(model, name, metrics)
 
             if acc > best_score:
                 best_score = acc
-                best_model = model
+                st.session_state.best_model = model
 
             st.subheader(name)
             st.write(metrics)
@@ -218,7 +221,7 @@ with tab1:
                     st.pyplot(fig)
 
         st.success("Training Complete")
-        st.dataframe(pd.DataFrame(leaderboard))
+        st.dataframe(pd.DataFrame(st.session_state.leaderboard))
 
 # =========================================================
 # PREDICTION TAB
@@ -226,8 +229,8 @@ with tab1:
 
 with tab2:
     st.header("Manual Prediction")
-    if not trained_models:
-        st.info("Train models first to enable manual prediction.")
+    if not st.session_state.trained_models:
+        st.info("⚠️ Train models first to enable manual prediction.")
     else:
         inputs = []
         for f in feature_names:
@@ -237,9 +240,9 @@ with tab2:
                 val = st.text_input(label=f, value="")
             inputs.append(val)
 
-        model_name = st.selectbox("Select Model", list(trained_models.keys()))
+        model_name = st.selectbox("Select Model", list(st.session_state.trained_models.keys()))
         if st.button("Predict"):
-            model = trained_models[model_name]
+            model = st.session_state.trained_models[model_name]
             input_df = pd.DataFrame([inputs], columns=feature_names)
             for f in feature_names:
                 if np.issubdtype(X[f].dtype, np.number):
@@ -271,28 +274,54 @@ with tab3:
         st.warning("⚠️ Possible Drift Detected")
     else:
         st.success("No significant drift")
-
 # =========================================================
 # EXPLAINABILITY TAB
 # =========================================================
 
 with tab4:
     st.header("Explainability")
-    if not SHAP_AVAILABLE:
-        st.warning("SHAP not installed.")
-    elif not trained_models:
-        st.info("Train models first.")
+
+    if not st.session_state.trained_models:
+        st.info("⚠️ Train models first to use explainability features.")
     else:
-        model_name = st.selectbox("Model", list(trained_models.keys()), key="shap")
-        if st.button("Run SHAP"):
-            model = trained_models.get(model_name)
-            if model:
+        model_name = st.selectbox("Model", list(st.session_state.trained_models.keys()), key="shap")
+        model = st.session_state.trained_models[model_name]
+
+        # SHAP explainability
+        if SHAP_AVAILABLE:
+            if st.button("Run SHAP", key="shap_button"):
                 sample_X = X_test.sample(min(100, len(X_test)), random_state=42)
                 explainer = shap.Explainer(model, X_train)
                 shap_values = explainer(sample_X)
                 fig = plt.figure()
                 shap.summary_plot(shap_values, sample_X, show=False)
                 st.pyplot(fig)
+        else:
+            st.warning("SHAP not installed. Feature importance still available.")
+
+        # Built-in feature importance
+        st.subheader("Feature Importance / Coefficients")
+
+        if hasattr(model, "feature_importances_"):  # Tree-based models
+            importances = model.feature_importances_
+            fig, ax = plt.subplots()
+            ax.barh(feature_names, importances)
+            ax.set_xlabel("Importance")
+            ax.set_title(f"Feature Importance — {model_name}")
+            st.pyplot(fig)
+
+        elif hasattr(model, "coef_"):  # Linear models
+            coefs = model.coef_
+            # For multi-class logistic regression, take mean absolute value across classes
+            if coefs.ndim > 1:
+                coefs = np.mean(np.abs(coefs), axis=0)
+            fig, ax = plt.subplots()
+            ax.barh(feature_names, coefs)
+            ax.set_xlabel("Coefficient Magnitude")
+            ax.set_title(f"Feature Coefficients — {model_name}")
+            st.pyplot(fig)
+        else:
+            st.info("Feature importance not available for this model type.")
 
 # =========================================================
 # MODEL REGISTRY TAB
@@ -315,11 +344,11 @@ with tab5:
 
 st.sidebar.header("Export")
 if st.sidebar.button("Download Best Model"):
-    if best_model is None:
-        st.sidebar.warning("Train models first.")
+    if st.session_state.best_model is None:
+        st.sidebar.warning("⚠️ Train models first.")
     else:
         buffer = io.BytesIO()
-        pickle.dump(best_model, buffer)
+        pickle.dump(st.session_state.best_model, buffer)
         buffer.seek(0)
         st.sidebar.download_button(
             "Download Best Model",
