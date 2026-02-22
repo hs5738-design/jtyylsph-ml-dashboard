@@ -3,4 +3,6 @@ pandas
 numpy
 scikit-learn
 matplotlib
+scipy
+shap
 joblib
