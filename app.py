@@ -275,7 +275,7 @@ with tab3:
     else:
         st.success("No significant drift")
 # =========================================================
-# EXPLAINABILITY TAB
+# EXPLAINABILITY TAB (Safe & Robust)
 # =========================================================
 
 with tab4:
@@ -284,12 +284,17 @@ with tab4:
     if not st.session_state.trained_models:
         st.info("⚠️ Train models first to use explainability features.")
     else:
-        model_name = st.selectbox("Model", list(st.session_state.trained_models.keys()), key="shap")
+        model_name = st.selectbox(
+            "Select Model",
+            list(st.session_state.trained_models.keys()),
+            key="explain_model"
+        )
         model = st.session_state.trained_models[model_name]
 
-        # SHAP explainability
+        st.subheader("SHAP Explainability")
         if SHAP_AVAILABLE:
             if st.button("Run SHAP", key="shap_button"):
+                # Use a sample if dataset is large
                 sample_X = X_test.sample(min(100, len(X_test)), random_state=42)
                 explainer = shap.Explainer(model, X_train)
                 shap_values = explainer(sample_X)
@@ -297,29 +302,38 @@ with tab4:
                 shap.summary_plot(shap_values, sample_X, show=False)
                 st.pyplot(fig)
         else:
-            st.warning("SHAP not installed. Feature importance still available.")
+            st.warning("SHAP not installed. Feature importance still available below.")
 
-        # Built-in feature importance
         st.subheader("Feature Importance / Coefficients")
 
-        if hasattr(model, "feature_importances_"):  # Tree-based models
+        # Tree-based models
+        if hasattr(model, "feature_importances_"):
             importances = model.feature_importances_
-            fig, ax = plt.subplots()
-            ax.barh(feature_names, importances)
-            ax.set_xlabel("Importance")
-            ax.set_title(f"Feature Importance — {model_name}")
-            st.pyplot(fig)
+            # Safety check
+            if len(importances) != len(feature_names):
+                st.warning(f"Cannot plot feature importances: {len(importances)} != {len(feature_names)}")
+            else:
+                fig, ax = plt.subplots()
+                ax.barh(feature_names, importances)
+                ax.set_xlabel("Importance")
+                ax.set_title(f"Feature Importance — {model_name}")
+                st.pyplot(fig)
 
-        elif hasattr(model, "coef_"):  # Linear models
+        # Linear models (Logistic Regression)
+        elif hasattr(model, "coef_"):
             coefs = model.coef_
-            # For multi-class logistic regression, take mean absolute value across classes
             if coefs.ndim > 1:
-                coefs = np.mean(np.abs(coefs), axis=0)
-            fig, ax = plt.subplots()
-            ax.barh(feature_names, coefs)
-            ax.set_xlabel("Coefficient Magnitude")
-            ax.set_title(f"Feature Coefficients — {model_name}")
-            st.pyplot(fig)
+                coefs = np.mean(np.abs(coefs), axis=0)  # Multi-class: average across classes
+            coefs = np.atleast_1d(coefs)  # Ensure 1D array
+            if len(coefs) != len(feature_names):
+                st.warning(f"Cannot plot coefficients: {len(coefs)} != {len(feature_names)}")
+            else:
+                fig, ax = plt.subplots()
+                ax.barh(feature_names, coefs)
+                ax.set_xlabel("Coefficient Magnitude")
+                ax.set_title(f"Feature Coefficients — {model_name}")
+                st.pyplot(fig)
+
         else:
             st.info("Feature importance not available for this model type.")
 
@@ -355,3 +369,4 @@ if st.sidebar.button("Download Best Model"):
             buffer,
             file_name="best_model.pkl"
         )
+
