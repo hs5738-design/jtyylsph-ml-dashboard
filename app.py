@@ -27,7 +27,15 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 
 from scipy.stats import ks_2samp
-import shap
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except:
+    SHAP_AVAILABLE = False
+if not SHAP_AVAILABLE:
+    st.warning("SHAP not installed in environment.")
+else:
+    # run shap
 
 # =========================================================
 # Page Config
@@ -318,36 +326,39 @@ with tab3:
     else:
         st.success("No significant drift")
 
-
 # =========================================================
 # EXPLAINABILITY
 # =========================================================
 
 with tab4:
-
     st.header("SHAP Explainability")
 
-    model_name = st.selectbox(
-        "Model",
-        list(trained_models.keys()),
-        key="shap"
-    )
+    if not SHAP_AVAILABLE:
+        st.warning("SHAP not installed in this environment.")
+        st.info("Install SHAP locally or add it to requirements.txt to enable explainability.")
 
-    if st.button("Run SHAP"):
+    else:
 
-        model = trained_models.get(model_name)
+        model_name = st.selectbox(
+            "Model",
+            list(trained_models.keys()),
+            key="shap"
+        )
 
-        if model is None:
-            st.warning("Train models first.")
-        else:
+        if st.button("Run SHAP"):
 
-            explainer = shap.Explainer(model, X_train)
-            shap_values = explainer(X_test)
+            model = trained_models.get(model_name)
 
-            fig = plt.figure()
-            shap.summary_plot(shap_values, X_test, show=False)
-            st.pyplot(fig)
+            if model is None:
+                st.warning("Train models first.")
+            else:
 
+                explainer = shap.Explainer(model, X_train)
+                shap_values = explainer(X_test)
+
+                fig = plt.figure()
+                shap.summary_plot(shap_values, X_test, show=False)
+                st.pyplot(fig)
 
 # =========================================================
 # MODEL EXPORT
