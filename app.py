@@ -1,52 +1,53 @@
 # =========================================================
-# JTYYLSPH Intelligent Classification Platform V2
-# Production Architecture
+# JTYYLSPH Intelligent Classification Platform V3
+# Enterprise / MLOps Architecture
 # =========================================================
 
 import streamlit as st
+st.set_page_config(page_title="JTYYLSPH AI Platform V3", layout="wide")
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
 import json
 import pickle
+import os
 
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
 from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix,
-    ConfusionMatrixDisplay,
-    roc_curve,
-    auc,
+    accuracy_score, precision_score, recall_score, f1_score,
+    confusion_matrix, ConfusionMatrixDisplay,
+    roc_curve, auc
 )
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-
 from scipy.stats import ks_2samp
+
+# Optional SHAP
 try:
     import shap
     SHAP_AVAILABLE = True
 except:
     SHAP_AVAILABLE = False
-if not SHAP_AVAILABLE:
-    st.warning("SHAP not installed in environment.")
-else:
-    # run shap
+
 
 # =========================================================
-# Page Config
+# TITLE
 # =========================================================
 
-st.set_page_config(page_title="JTYYLSPH AI Platform", layout="wide")
-st.title("🚀 Intelligent Classification & Analytics Platform")
+st.title("🚀 Intelligent Classification & Analytics Platform — V3")
+st.caption("Enterprise ML • AutoML • Monitoring • Explainability")
+
 
 # =========================================================
-# Logging
+# UTILITIES
 # =========================================================
+
+LOG_FILE = "prediction_logs.jsonl"
+MODEL_REGISTRY = "model_registry.pkl"
+
 
 def log_prediction(data, pred, prob, model_name):
 
@@ -58,12 +59,31 @@ def log_prediction(data, pred, prob, model_name):
         "model": model_name,
     }
 
-    with open("prediction_logs.jsonl", "a") as f:
+    with open(LOG_FILE, "a") as f:
         f.write(json.dumps(entry) + "\n")
 
 
+def save_model_version(model, name, metrics):
+
+    record = {
+        "name": name,
+        "timestamp": datetime.datetime.now(),
+        "metrics": metrics,
+        "model": model
+    }
+
+    if os.path.exists(MODEL_REGISTRY):
+        registry = pickle.load(open(MODEL_REGISTRY, "rb"))
+    else:
+        registry = []
+
+    registry.append(record)
+
+    pickle.dump(registry, open(MODEL_REGISTRY, "wb"))
+
+
 # =========================================================
-# Sidebar Dataset
+# DATASET SIDEBAR
 # =========================================================
 
 st.sidebar.header("📂 Dataset")
@@ -71,7 +91,7 @@ st.sidebar.header("📂 Dataset")
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 domain = st.sidebar.selectbox(
-    "Synthetic Domain",
+    "Synthetic Dataset",
     ["Finance", "Healthcare", "Sports", "General"]
 )
 
@@ -87,33 +107,22 @@ else:
 
     if domain == "Finance":
         X, y = make_classification(
-            n_samples=500,
-            n_features=6,
-            n_informative=4,
-            random_state=42,
+            n_samples=500, n_features=6, n_informative=4, random_state=42
         )
 
     elif domain == "Healthcare":
         X, y = make_classification(
-            n_samples=500,
-            n_features=8,
-            n_informative=5,
-            random_state=1,
+            n_samples=500, n_features=8, n_informative=5, random_state=1
         )
 
     elif domain == "Sports":
         X, y = make_classification(
-            n_samples=500,
-            n_features=5,
-            n_informative=3,
-            random_state=7,
+            n_samples=500, n_features=5, n_informative=3, random_state=7
         )
 
     else:
         X, y = make_classification(
-            n_samples=400,
-            n_features=4,
-            random_state=0,
+            n_samples=400, n_features=4, random_state=0
         )
 
     X = pd.DataFrame(X)
@@ -121,18 +130,15 @@ else:
 
 st.write("Dataset Shape:", X.shape)
 
-# =========================================================
-# Train Test Split
-# =========================================================
+feature_names = list(X.columns)
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-feature_names = list(X.columns)
 
 # =========================================================
-# Models + Hyperparameters
+# MODELS
 # =========================================================
 
 models = {
@@ -144,7 +150,7 @@ models = {
 param_grids = {
     "RandomForest": {
         "n_estimators": [100, 200],
-        "max_depth": [None, 5, 10],
+        "max_depth": [None, 5],
     },
     "GradientBoosting": {
         "n_estimators": [100, 200],
@@ -152,32 +158,37 @@ param_grids = {
     },
 }
 
-leaderboard = []
 trained_models = {}
+leaderboard = []
 best_model = None
 best_score = 0
 
-# =========================================================
-# Tabs
-# =========================================================
-
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["🤖 Training", "🔮 Prediction", "📊 Analytics", "🧠 Explainability"]
-)
 
 # =========================================================
-# TRAINING
+# TABS
+# =========================================================
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🤖 Training",
+    "🔮 Prediction",
+    "📊 Monitoring",
+    "🧠 Explainability",
+    "📁 Model Registry"
+])
+
+
+# =========================================================
+# TRAINING TAB
 # =========================================================
 
 with tab1:
 
-    st.header("Model Training & AutoML")
+    st.header("AutoML Training")
 
     if st.button("Train Models"):
 
         for name, model in models.items():
 
-            # GridSearch if params exist
             if name in param_grids:
 
                 grid = GridSearchCV(
@@ -204,23 +215,27 @@ with tab1:
 
             cv_scores = cross_val_score(model, X, y, cv=5)
 
+            metrics = {
+                "accuracy": acc,
+                "precision": prec,
+                "recall": rec,
+                "f1": f1,
+                "cv_mean": cv_scores.mean()
+            }
+
             leaderboard.append({
                 "Model": name,
-                "Accuracy": acc,
-                "CV Mean": cv_scores.mean(),
+                **metrics
             })
 
-            # Best model tracking
+            save_model_version(model, name, metrics)
+
             if acc > best_score:
                 best_score = acc
                 best_model = model
 
             st.subheader(name)
-            st.write(f"Accuracy: {acc:.3f}")
-            st.write(f"Precision: {prec:.3f}")
-            st.write(f"Recall: {rec:.3f}")
-            st.write(f"F1: {f1:.3f}")
-            st.write(f"CV Mean: {cv_scores.mean():.3f}")
+            st.write(metrics)
 
             # Confusion Matrix
             cm = confusion_matrix(y_test, preds)
@@ -228,7 +243,7 @@ with tab1:
             ConfusionMatrixDisplay(cm).plot(ax=ax_cm)
             st.pyplot(fig_cm)
 
-            # ROC Curve
+            # ROC
             if hasattr(model, "predict_proba"):
                 probs = model.predict_proba(X_test)[:, 1]
                 fpr, tpr, _ = roc_curve(y_test, probs)
@@ -242,12 +257,11 @@ with tab1:
 
         st.success("Training Complete")
 
-        st.subheader("Leaderboard")
         st.dataframe(pd.DataFrame(leaderboard))
 
 
 # =========================================================
-# PREDICTION
+# PREDICTION TAB
 # =========================================================
 
 with tab2:
@@ -260,10 +274,7 @@ with tab2:
         val = st.number_input(f, value=0.0)
         inputs.append(val)
 
-    model_name = st.selectbox(
-        "Model",
-        list(models.keys())
-    )
+    model_name = st.selectbox("Model", list(trained_models.keys()))
 
     if st.button("Predict"):
 
@@ -298,12 +309,12 @@ with tab2:
 
 
 # =========================================================
-# ANALYTICS
+# MONITORING TAB
 # =========================================================
 
 with tab3:
 
-    st.header("Exploratory Analysis")
+    st.header("Data Monitoring & Drift Detection")
 
     st.write(X.describe())
 
@@ -314,7 +325,6 @@ with tab3:
     plt.colorbar(cax)
     st.pyplot(fig)
 
-    # Drift detection
     st.subheader("Drift Detection")
 
     col = st.selectbox("Feature", feature_names)
@@ -326,17 +336,17 @@ with tab3:
     else:
         st.success("No significant drift")
 
+
 # =========================================================
-# EXPLAINABILITY
+# EXPLAINABILITY TAB
 # =========================================================
 
 with tab4:
-    st.header("SHAP Explainability")
+
+    st.header("Explainability")
 
     if not SHAP_AVAILABLE:
-        st.warning("SHAP not installed in this environment.")
-        st.info("Install SHAP locally or add it to requirements.txt to enable explainability.")
-
+        st.warning("SHAP not installed in environment.")
     else:
 
         model_name = st.selectbox(
@@ -360,8 +370,36 @@ with tab4:
                 shap.summary_plot(shap_values, X_test, show=False)
                 st.pyplot(fig)
 
+
 # =========================================================
-# MODEL EXPORT
+# MODEL REGISTRY TAB
+# =========================================================
+
+with tab5:
+
+    st.header("Model Registry")
+
+    if os.path.exists(MODEL_REGISTRY):
+
+        registry = pickle.load(open(MODEL_REGISTRY, "rb"))
+
+        rows = []
+
+        for r in registry:
+            rows.append({
+                "name": r["name"],
+                "timestamp": r["timestamp"],
+                **r["metrics"]
+            })
+
+        st.dataframe(pd.DataFrame(rows))
+
+    else:
+        st.info("No models saved yet.")
+
+
+# =========================================================
+# EXPORT BEST MODEL
 # =========================================================
 
 st.sidebar.header("Export")
