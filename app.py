@@ -1,27 +1,29 @@
-
 # =========================================================
-# JTYYLSPH Intelligent Classification Platform V5 ENTERPRISE
+# JTYYLSPH V5 ENTERPRISE AI PLATFORM
 # Production Hardened Edition
-# JSON Registry • Schema Versioning • Audit Logging
 # =========================================================
 
 import streamlit as st
-st.set_page_config(page_title="JTYYLSPH AI Platform V5 ENTERPRISE", layout="wide")
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import datetime
-import json
-import pickle
-import os
-
+import datetime, json, pickle, os, io
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, ConfusionMatrixDisplay
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, \
+    ConfusionMatrixDisplay, roc_curve, auc
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import label_binarize
 from scipy.stats import ks_2samp
+
+# Optional SHAP
+try:
+    import shap
+
+    SHAP_AVAILABLE = True
+except:
+    SHAP_AVAILABLE = False
 
 # =========================================================
 # CONFIGURATION
@@ -35,7 +37,7 @@ LOG_FILE = "prediction_logs.jsonl"
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
 
 # =========================================================
-# SECURE LOGIN (ENVIRONMENT VARIABLES)
+# LOGIN
 # =========================================================
 
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
@@ -43,6 +45,7 @@ ADMIN_PASS = os.getenv("ADMIN_PASS", "admin123")
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+
 
 def login():
     st.sidebar.subheader("🔐 Enterprise Login")
@@ -54,55 +57,23 @@ def login():
         else:
             st.sidebar.error("Invalid credentials")
 
+
 if not st.session_state.authenticated:
     login()
     st.stop()
 
 # =========================================================
-# REGISTRY MIGRATION (Pickle → JSON)
-# =========================================================
-
-def migrate_registry_if_needed():
-    if os.path.exists("model_registry.pkl") and not os.path.exists(MODEL_REGISTRY):
-        with open("model_registry.pkl", "rb") as f:
-            old_registry = pickle.load(f)
-
-        new_registry = []
-
-        for i, r in enumerate(old_registry):
-            model_path = f"{ARTIFACT_DIR}/{r.get('name','model')}_legacy_v{i+1}.pkl"
-            with open(model_path, "wb") as mf:
-                pickle.dump(r["model"], mf)
-
-            new_registry.append({
-                "schema_version": REGISTRY_SCHEMA_VERSION,
-                "version": f"legacy_v{i+1}",
-                "name": r.get("name"),
-                "timestamp": str(r.get("timestamp")),
-                "metrics": r.get("metrics", {}),
-                "artifact_path": model_path
-            })
-
-        with open(MODEL_REGISTRY, "w") as f:
-            json.dump(new_registry, f, indent=2)
-
-        st.warning("Registry migrated to JSON format.")
-
-migrate_registry_if_needed()
-
-# =========================================================
 # SESSION STATE
 # =========================================================
 
-if "trained_models" not in st.session_state:
-    st.session_state.trained_models = {}
-if "best_model" not in st.session_state:
-    st.session_state.best_model = None
-if "leaderboard" not in st.session_state:
-    st.session_state.leaderboard = []
+for key in ["trained_models", "best_model", "leaderboard", "training_done"]:
+    if key not in st.session_state:
+        st.session_state[
+            key] = {} if key == "trained_models" else [] if key == "leaderboard" else None if key == "best_model" else False
+
 
 # =========================================================
-# UTILITIES
+# UTILITY FUNCTIONS
 # =========================================================
 
 def log_prediction(data, pred, prob, model_name):
@@ -116,17 +87,16 @@ def log_prediction(data, pred, prob, model_name):
     with open(LOG_FILE, "a") as f:
         f.write(json.dumps(entry) + "\n")
 
-def save_model_version(model, name, metrics):
 
+def save_model_version(model, name, metrics):
+    # Load or create registry
+    registry = []
     if os.path.exists(MODEL_REGISTRY):
         with open(MODEL_REGISTRY, "r") as f:
             registry = json.load(f)
-    else:
-        registry = []
 
-    version_tag = f"v{len(registry)+1}"
+    version_tag = f"v{len(registry) + 1}"
     model_path = f"{ARTIFACT_DIR}/{name}_{version_tag}.pkl"
-
     with open(model_path, "wb") as mf:
         pickle.dump(model, mf)
 
@@ -138,32 +108,24 @@ def save_model_version(model, name, metrics):
         "metrics": metrics,
         "artifact_path": model_path
     }
-
     registry.append(record)
-
     with open(MODEL_REGISTRY, "w") as f:
         json.dump(registry, f, indent=2)
 
-def population_stability_index(expected, actual, buckets=10):
-    breakpoints = np.linspace(0, 1, buckets + 1)
-    expected_percents = np.histogram(expected, breakpoints)[0] / len(expected)
-    actual_percents = np.histogram(actual, breakpoints)[0] / len(actual)
-    psi = np.sum((expected_percents - actual_percents) *
-                 np.log((expected_percents + 1e-6) / (actual_percents + 1e-6)))
-    return psi
 
 # =========================================================
-# TITLE
+# PAGE TITLE
 # =========================================================
 
 st.title("🚀 JTYYLSPH V5 ENTERPRISE AI PLATFORM")
-st.caption("AutoML • MLOps • Drift Detection • Fairness • Audit Logging")
+st.caption("AutoML • MLOps • Drift Detection • Explainability • Audit Logging")
 
 # =========================================================
-# DATA
+# DATA UPLOAD / SYNTHETIC DATA
 # =========================================================
 
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+domain = st.sidebar.selectbox("Synthetic Dataset", ["Finance", "Healthcare", "Sports", "General"])
 
 if uploaded:
     df = pd.read_csv(uploaded)
@@ -171,12 +133,21 @@ if uploaded:
     X = df.drop(columns=[target_col])
     y = df[target_col]
 else:
-    X_data, y_data = make_classification(n_samples=500, n_features=6, random_state=42)
+    n_samples = 500
+    if domain == "Finance":
+        X_data, y_data = make_classification(n_samples=n_samples, n_features=6, n_informative=4, random_state=42)
+    elif domain == "Healthcare":
+        X_data, y_data = make_classification(n_samples=n_samples, n_features=8, n_informative=5, random_state=1)
+    elif domain == "Sports":
+        X_data, y_data = make_classification(n_samples=n_samples, n_features=5, n_informative=3, random_state=7)
+    else:
+        X_data, y_data = make_classification(n_samples=400, n_features=4, random_state=0)
     X = pd.DataFrame(X_data)
     y = pd.Series(y_data)
 
 X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
+st.write("Dataset Shape:", X.shape)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -199,30 +170,17 @@ param_grids = {
 # TABS
 # =========================================================
 
-tabs = st.tabs([
-    "🤖 Training",
-    "📊 Model Comparison",
-    "🔮 Prediction",
-    "📈 Monitoring",
-    "⚖️ Fairness",
-    "🗂 Registry",
-    "📜 Audit Logs"
-])
+tabs = st.tabs(
+    ["🤖 Training", "📊 Comparison", "🔮 Prediction", "📈 Monitoring", "⚖️ Fairness", "🗂 Registry", "📜 Audit Logs"])
 
-# =========================================================
-# TRAINING
-# =========================================================
-
-
+# ---------------------------
+# TRAINING TAB
+# ---------------------------
 with tabs[0]:
-
     if st.button("Train All Models"):
-
         st.session_state.leaderboard = []
         best_score = 0
-
         for name, model in models.items():
-
             if name in param_grids:
                 grid = GridSearchCV(model, param_grids[name], cv=3)
                 grid.fit(X_train, y_train)
@@ -231,22 +189,14 @@ with tabs[0]:
                 model.fit(X_train, y_train)
 
             preds = model.predict(X_test)
-
             acc = accuracy_score(y_test, preds)
             prec = precision_score(y_test, preds, average="weighted")
             rec = recall_score(y_test, preds, average="weighted")
             f1 = f1_score(y_test, preds, average="weighted")
-
-            metrics = {
-                "accuracy": acc,
-                "precision": prec,
-                "recall": rec,
-                "f1": f1
-            }
+            metrics = {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1}
 
             st.session_state.trained_models[name] = model
             st.session_state.leaderboard.append({"Model": name, **metrics})
-
             save_model_version(model, name, metrics)
 
             if acc > best_score:
@@ -256,23 +206,14 @@ with tabs[0]:
         st.session_state.training_done = True
         st.success("Training Complete")
 
-    # ---------------------------------------------------
-    # DISPLAY RESULTS PERSISTENTLY
-    # ---------------------------------------------------
-
-    if "training_done" in st.session_state:
-
+    if st.session_state.training_done:
         st.subheader("Model Performance")
-
         df_lb = pd.DataFrame(st.session_state.leaderboard)
         st.dataframe(df_lb)
-
-        # Accuracy chart
         fig, ax = plt.subplots()
         ax.bar(df_lb["Model"], df_lb["accuracy"])
         ax.set_title("Accuracy Comparison")
         st.pyplot(fig)
-
         # Confusion matrix for best model
         if st.session_state.best_model:
             preds = st.session_state.best_model.predict(X_test)
@@ -281,19 +222,115 @@ with tabs[0]:
             ConfusionMatrixDisplay(cm).plot(ax=ax_cm)
             st.pyplot(fig_cm)
 
-# =========================================================
-# REGISTRY DASHBOARD
-# =========================================================
+# ---------------------------
+# PREDICTION TAB
+# ---------------------------
+with tabs[2]:
+    st.header("Manual Prediction")
+    if not st.session_state.trained_models:
+        st.info("⚠️ Train models first")
+    else:
+        inputs = []
+        for f in feature_names:
+            val = st.number_input(label=f, value=float(X[f].mean()))
+            inputs.append(val)
+        model_name = st.selectbox("Select Model", list(st.session_state.trained_models.keys()))
+        if st.button("Predict"):
+            model = st.session_state.trained_models[model_name]
+            input_df = pd.DataFrame([inputs], columns=feature_names)
+            pred = model.predict(input_df)[0]
+            prob = model.predict_proba(input_df)[0][1] if hasattr(model, "predict_proba") else None
+            st.success(f"Prediction: {pred}")
+            if prob is not None:
+                st.metric("Confidence", f"{prob:.2f}")
+                st.metric("Risk Score", f"{prob * 100:.1f}")
+            log_prediction(input_df.to_dict(orient="records")[0], pred, prob, model_name)
 
+# ---------------------------
+# REGISTRY TAB
+# ---------------------------
 with tabs[5]:
-
+    st.header("Model Registry")
     if os.path.exists(MODEL_REGISTRY):
         with open(MODEL_REGISTRY, "r") as f:
             registry = json.load(f)
-
         st.dataframe(pd.DataFrame(registry))
     else:
         st.info("No registry entries yet.")
+
+# ---------------------------
+# AUDIT LOG TAB
+# ---------------------------
+with tabs[6]:
+    st.header("Prediction Audit Logs")
+    if os.path.exists(LOG_FILE):
+        logs = [json.loads(line) for line in open(LOG_FILE)]
+        df_logs = pd.DataFrame(logs)
+        st.dataframe(df_logs)
+        fig, ax = plt.subplots()
+        df_logs["prediction"].value_counts().plot(kind="bar", ax=ax)
+        st.pyplot(fig)
+    else:
+        st.info("No logs yet.")
+# ---------------------------
+# EXPLAINABILITY TAB
+# ---------------------------
+with tabs[4]:
+    st.header("Explainability & Feature Importance")
+
+    if not st.session_state.trained_models:
+        st.info("⚠️ Train models first to use explainability features.")
+    else:
+        model_name = st.selectbox(
+            "Select Model",
+            list(st.session_state.trained_models.keys()),
+            key="explain_model"
+        )
+        model = st.session_state.trained_models[model_name]
+
+        st.subheader("SHAP Explainability")
+        if SHAP_AVAILABLE:
+            if st.button("Run SHAP", key="shap_button"):
+                # Limit samples for performance
+                sample_X = X_test.sample(min(100, len(X_test)), random_state=42)
+                explainer = shap.Explainer(model, X_train)
+                shap_values = explainer(sample_X)
+                fig = plt.figure()
+                shap.summary_plot(shap_values, sample_X, show=False)
+                st.pyplot(fig)
+        else:
+            st.warning("SHAP not installed. Feature importance still available below.")
+
+        st.subheader("Feature Importance / Coefficients")
+
+        # Tree-based models
+        if hasattr(model, "feature_importances_"):
+            importances = model.feature_importances_
+            if len(importances) == len(feature_names):
+                fig, ax = plt.subplots()
+                ax.barh(feature_names, importances)
+                ax.set_xlabel("Importance")
+                ax.set_title(f"Feature Importance — {model_name}")
+                st.pyplot(fig)
+            else:
+                st.warning(f"Cannot plot feature importances: {len(importances)} != {len(feature_names)}")
+
+        # Linear models (Logistic Regression)
+        elif hasattr(model, "coef_"):
+            coefs = model.coef_
+            if coefs.ndim > 1:  # Multi-class
+                coefs = np.mean(np.abs(coefs), axis=0)
+            coefs = np.atleast_1d(coefs)
+            if len(coefs) == len(feature_names):
+                fig, ax = plt.subplots()
+                ax.barh(feature_names, coefs)
+                ax.set_xlabel("Coefficient Magnitude")
+                ax.set_title(f"Feature Coefficients — {model_name}")
+                st.pyplot(fig)
+            else:
+                st.warning(f"Cannot plot coefficients: {len(coefs)} != {len(feature_names)}")
+        else:
+            st.info("Feature importance not available for this model type.")
 
 # =========================================================
 # AUDIT LOG DASHBOARD
