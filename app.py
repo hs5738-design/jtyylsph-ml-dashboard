@@ -295,6 +295,7 @@ with tabs[2]:
     else:
         inputs = [st.number_input(f, value=0.0) for f in feature_names]
         model_name = st.selectbox("Model", list(st.session_state.trained_models.keys()))
+        key = "predict_model_selectbox"
         if st.button("Predict"):
             model = st.session_state.trained_models[model_name]
             input_df = pd.DataFrame([inputs], columns=feature_names)
@@ -326,6 +327,7 @@ with tabs[4]:
         st.info("Train models first")
     else:
         model_name = st.selectbox("Model", list(st.session_state.trained_models.keys()))
+        key = "explain_model_selectbox"
         model = st.session_state.trained_models[model_name]
         if hasattr(model, "feature_importances_"):
             safe_barh(feature_names, model.feature_importances_, "Feature Importance")
