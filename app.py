@@ -55,11 +55,20 @@ def load_registry():
 def save_registry(reg):
     with open(MODEL_REGISTRY, "w") as f:
         json.dump(reg, f, indent=2)
-
 def register_model(name, model, feature_names, metrics):
     """Save model artifact and record to registry safely."""
     registry = load_registry()
-    versions = [r["version"] for r in registry if r["name"] == name]
+
+    # Extract versions safely, ignore invalid values
+    versions = []
+    for r in registry:
+        if r.get("name") == name:
+            try:
+                v = int(r.get("version", 0))
+                versions.append(v)
+            except:
+                continue
+
     version = max(versions) + 1 if versions else 1
 
     model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pkl")
