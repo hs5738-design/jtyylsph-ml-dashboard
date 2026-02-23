@@ -167,51 +167,40 @@ if "training_done" not in st.session_state:
 
 if "feature_names" not in st.session_state:
     st.session_state.feature_names = []
-
-# =========================================================
-# AUTO LOAD MODELS FROM REGISTRY (SAFE)
-# =========================================================
+# ==========================
+# Auto-load models from registry
+# ==========================
 
 if not st.session_state.trained_models:
 
-    registry = load_registry()
+    loaded = load_models_from_registry()
 
-    for rec in registry:
+    if loaded:
+        for name, artifact in loaded.items():
+            # Extract the model
+            model = artifact.get("model")
 
-        try:
-            path = rec.get("path")
+            if model is None:
+                continue  # skip corrupted entries
 
-            if not path or not os.path.exists(path):
-                continue
+            st.session_state.trained_models[name] = model
 
-            artifact = joblib.load(path)
-
-            # Support both old and new artifact formats
-            if isinstance(artifact, dict) and "model" in artifact:
-                model_obj = artifact["model"]
-                features = artifact.get("feature_names", [])
-                metrics = artifact.get("metrics", {})
-            else:
-                model_obj = artifact
-                features = []
-                metrics = {}
-
-            name = rec.get("name", "model")
-
-            st.session_state.trained_models[name] = model_obj
-
-            # Restore leaderboard
-            if metrics:
-                st.session_state.leaderboard[name] = metrics
-
-            # Restore features
+            # Extract feature names
+            features = artifact.get("feature_names")
             if features:
                 st.session_state.feature_names = features
 
-        except Exception as e:
-            print("Load error:", e)
+            # Extract metrics, provide defaults if missing
+            metrics = artifact.get("metrics", {})
+            default_metrics = {
+                "accuracy": metrics.get("accuracy", 0.0),
+                "precision": metrics.get("precision", 0.0),
+                "recall": metrics.get("recall", 0.0),
+                "f1": metrics.get("f1", 0.0)
+            }
 
-    if st.session_state.trained_models:
+            st.session_state.leaderboard[name] = default_metrics
+
         st.session_state.training_done = True
 
 # =========================================================
@@ -343,16 +332,19 @@ with tabs[1]:
     if st.session_state.training_done:
 
         df_lb = pd.DataFrame(st.session_state.leaderboard).T
+
         st.dataframe(df_lb)
 
-        st.bar_chart(df_lb["accuracy"])
-
-        champion = df_lb["accuracy"].idxmax()
-        st.success(f"Champion Model: {champion}")
+        # Safely check for 'accuracy'
+        if "accuracy" in df_lb.columns:
+            st.bar_chart(df_lb["accuracy"])
+            champion = df_lb["accuracy"].idxmax()
+            st.success(f"Champion Model: {champion}")
+        else:
+            st.warning("No accuracy metric found in leaderboard.")
 
     else:
         st.info("Train models first")
-
 
 # =========================================================
 # PREDICTION
