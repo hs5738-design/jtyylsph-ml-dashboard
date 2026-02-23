@@ -1,5 +1,6 @@
 # =========================================================
 # JTYYLSPH V6.2 PRO MAX — ENTERPRISE AI PLATFORM
+# Production • Persistent Models • Registry • Explainability
 # =========================================================
 
 import streamlit as st
@@ -32,6 +33,7 @@ except:
 MODEL_REGISTRY = "model_registry.json"
 MODEL_DIR = "models"
 LOG_FILE = "prediction_logs.jsonl"
+
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 # =========================================================
@@ -53,20 +55,40 @@ def load_registry():
 def save_registry(reg):
     with open(MODEL_REGISTRY, "w") as f:
         json.dump(reg, f, indent=2)
-
 def register_model(name, model, feature_names, metrics):
+    """Save model artifact and record to registry safely."""
     registry = load_registry()
-    versions = [r["version"] for r in registry if r["name"] == name]
+
+    # Extract versions safely, ignore invalid values
+    versions = []
+    for r in registry:
+        if r.get("name") == name:
+            try:
+                v = int(r.get("version", 0))
+                versions.append(v)
+            except:
+                continue
+
     version = max(versions) + 1 if versions else 1
+
     model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pkl")
+
+    # Ensure all metrics exist
     safe_metrics = {
         "accuracy": metrics.get("accuracy", 0.0),
         "precision": metrics.get("precision", 0.0),
         "recall": metrics.get("recall", 0.0),
         "f1": metrics.get("f1", 0.0)
     }
-    artifact = {"model": model, "feature_names": feature_names, "metrics": safe_metrics}
+
+    artifact = {
+        "model": model,
+        "feature_names": feature_names,
+        "metrics": safe_metrics
+    }
+
     joblib.dump(artifact, model_path)
+
     record = {
         "name": name,
         "version": version,
@@ -74,10 +96,12 @@ def register_model(name, model, feature_names, metrics):
         "metrics": safe_metrics,
         "time": datetime.datetime.utcnow().isoformat()
     }
+
     registry.append(record)
     save_registry(registry)
 
 def load_models_from_registry():
+    """Load all models safely from registry."""
     registry = load_registry()
     models = {}
     for rec in registry:
@@ -86,9 +110,12 @@ def load_models_from_registry():
             if not path or not os.path.exists(path):
                 continue
             artifact = joblib.load(path)
+            model = artifact.get("model")
+            if model is None:
+                continue
             models[rec["name"]] = artifact
         except:
-            pass
+            continue
     return models
 
 # =========================================================
@@ -136,24 +163,48 @@ if "training_done" not in st.session_state:
     st.session_state.training_done = False
 if "feature_names" not in st.session_state:
     st.session_state.feature_names = []
+# =========================================================
+# AUTO-LOAD MODELS FROM REGISTRY
+# =========================================================
 
-# Auto-load models
 if not st.session_state.trained_models:
+
     loaded = load_models_from_registry()
+
     if loaded:
         for name, artifact in loaded.items():
+            # Extract the model safely
             model = artifact.get("model")
-            features = artifact.get("feature_names", st.session_state.feature_names)
-            metrics = artifact.get("metrics", {})
-            if model:
-                st.session_state.trained_models[name] = model
+            if model is None:
+                continue  # skip corrupted entries
+
+            st.session_state.trained_models[name] = model
+
+            # Extract feature names
+            features = artifact.get("feature_names")
+            if features:
                 st.session_state.feature_names = features
-                st.session_state.leaderboard[name] = {
-                    "accuracy": metrics.get("accuracy", 0.0),
-                    "precision": metrics.get("precision", 0.0),
-                    "recall": metrics.get("recall", 0.0),
-                    "f1": metrics.get("f1", 0.0)
-                }
+
+            # Extract metrics and provide defaults if missing
+            metrics = artifact.get("metrics", {})
+            safe_metrics = {
+                "accuracy": metrics.get("accuracy", 0.0),
+                "precision": metrics.get("precision", 0.0),
+                "recall": metrics.get("recall", 0.0),
+                "f1": metrics.get("f1", 0.0)
+            }
+            st.session_state.leaderboard[name] = safe_metrics
+
+        # Sort leaderboard by accuracy descending
+        st.session_state.leaderboard = dict(
+            sorted(
+                st.session_state.leaderboard.items(),
+                key=lambda item: item[1].get("accuracy", 0.0),
+                reverse=True
+            )
+        )
+
+        # Mark training as done if any models loaded
         st.session_state.training_done = bool(st.session_state.trained_models)
 
 # =========================================================
@@ -168,16 +219,12 @@ st.caption("AutoML • MLOps • Registry • Drift Detection • Explainability
 # =========================================================
 
 st.sidebar.header("Dataset")
-uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"], key="upload_csv")
-domain = st.sidebar.selectbox(
-    "Synthetic Dataset",
-    ["Finance", "Healthcare", "Sports", "General"],
-    key="synthetic_dataset"
-)
+uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+domain = st.sidebar.selectbox("Synthetic Dataset", ["Finance", "Healthcare", "Sports", "General"])
 
 if uploaded:
     df = pd.read_csv(uploaded)
-    target_col = st.sidebar.selectbox("Target Column", df.columns, key="target_column")
+    target_col = st.sidebar.selectbox("Target Column", df.columns)
     X = df.drop(columns=[target_col])
     y = df[target_col]
 else:
@@ -210,14 +257,14 @@ param_grids = {
 # TABS
 # =========================================================
 
-tabs = st.tabs(["Training","Comparison","Prediction","Monitoring","Explainability","Registry","Audit Logs"])
+tabs = st.tabs(["Training", "Comparison", "Prediction", "Monitoring", "Explainability", "Registry", "Audit Logs"])
 
 # =========================================================
 # TRAINING
 # =========================================================
 
 with tabs[0]:
-    if st.button("Train Models", key="train_models"):
+    if st.button("Train Models"):
         st.session_state.leaderboard = {}
         for name, model in models.items():
             if name in param_grids:
@@ -240,51 +287,76 @@ with tabs[0]:
             register_model(name, model, feature_names, metrics)
 
         st.session_state.training_done = True
-        st.success("Training Complete")
-
+        st.success("✅ Training Complete")
 # =========================================================
 # COMPARISON
 # =========================================================
 
-with tabs[1]:
+with tabs[1]:  # Comparison tab
     if st.session_state.training_done:
+        # Build leaderboard dataframe
         df_lb = pd.DataFrame(st.session_state.leaderboard).T
-        for col in ["accuracy","precision","recall","f1"]:
+
+        # Ensure all expected metric columns exist
+        for col in ["accuracy", "precision", "recall", "f1"]:
             if col not in df_lb.columns:
                 df_lb[col] = 0.0
-        st.dataframe(df_lb)
-        st.bar_chart(df_lb["accuracy"])
-        champion = df_lb["accuracy"].idxmax()
+
+        # Sort by accuracy descending
+        df_lb_sorted = df_lb.sort_values(by="accuracy", ascending=False)
+
+        st.dataframe(df_lb_sorted)
+
+        # Bar chart for accuracy
+        st.bar_chart(df_lb_sorted["accuracy"])
+
+        # Display champion model
+        champion = df_lb_sorted.index[0]
         st.success(f"Champion Model: {champion}")
+
     else:
         st.info("Train models first")
 
 # =========================================================
 # PREDICTION
 # =========================================================
-
-with tabs[2]:
+with tabs[2]:  # Prediction
     if not st.session_state.training_done:
         st.info("Train models first")
     else:
+        feature_names = st.session_state.feature_names
+
+        st.subheader("Manual Prediction")
         inputs = []
         for f in feature_names:
-            inputs.append(st.number_input(f, value=0.0, key=f"input_{f}"))
+            inputs.append(st.number_input(f, value=0.0, key=f"predict_input_{f}"))
 
         model_name = st.selectbox(
             "Select Model for Prediction",
             list(st.session_state.trained_models.keys()),
-            key="select_model_prediction"
+            key="predict_model_selectbox"
         )
 
         if st.button("Predict", key="predict_button"):
             model = st.session_state.trained_models[model_name]
+
             input_df = pd.DataFrame([inputs], columns=feature_names)
             input_df = align_features(input_df, feature_names)
+
             pred = model.predict(input_df)[0]
-            prob = model.predict_proba(input_df)[0][1] if hasattr(model, "predict_proba") else None
+
+            prob = None
+            if hasattr(model, "predict_proba"):
+                prob = model.predict_proba(input_df)[0][1]
+
             st.success(f"Prediction: {pred}")
-            log_prediction(input_df.to_dict(orient="records")[0], pred, prob, model_name)
+
+            log_prediction(
+                input_df.to_dict(orient="records")[0],
+                pred,
+                prob,
+                model_name
+            )
 
 # =========================================================
 # MONITORING
@@ -292,43 +364,59 @@ with tabs[2]:
 
 with tabs[3]:
     st.write(X.describe())
-    col = st.selectbox("Feature for Drift Check", feature_names, key="monitoring_feature")
+    col = st.selectbox("Feature", feature_names)
     stat, p = ks_2samp(X_train[col], X_test[col])
     if p < 0.05:
-        st.warning("Possible Drift")
+        st.warning("⚠️ Possible Drift Detected")
     else:
         st.success("No Drift")
 
 # =========================================================
 # EXPLAINABILITY
 # =========================================================
-
-with tabs[4]:
+with tabs[4]:  # Explainability
     if not st.session_state.training_done:
         st.info("Train models first")
     else:
+        st.subheader("Model Explainability")
+
         model_name = st.selectbox(
             "Select Model for Explainability",
             list(st.session_state.trained_models.keys()),
-            key="select_model_explain"
+            key="explain_model_selectbox"
         )
+
         model = st.session_state.trained_models[model_name]
 
+        # Tree-based models
         if hasattr(model, "feature_importances_"):
-            safe_barh(feature_names, model.feature_importances_, "Feature Importance")
+            safe_barh(
+                feature_names,
+                model.feature_importances_,
+                "Feature Importance"
+            )
+
+        # Linear models
         elif hasattr(model, "coef_"):
             coefs = np.abs(model.coef_[0])
-            safe_barh(feature_names, coefs, "Coefficient Importance")
+            safe_barh(
+                feature_names,
+                coefs,
+                "Coefficient Importance"
+            )
 
-        if SHAP_AVAILABLE and st.button("Run SHAP", key="shap_button"):
-            try:
-                explainer = shap.Explainer(model, X_train)
-                shap_values = explainer(X_test[:100])
-                fig = plt.figure()
-                shap.summary_plot(shap_values, X_test[:100], show=False)
-                st.pyplot(fig)
-            except Exception as e:
-                st.warning(f"SHAP error: {e}")
+        # SHAP explanation
+        if SHAP_AVAILABLE:
+            if st.button("Run SHAP", key="shap_button"):
+                try:
+                    explainer = shap.Explainer(model, X_train)
+                    shap_values = explainer(X_test[:100])
+
+                    fig = plt.figure()
+                    shap.summary_plot(shap_values, X_test[:100], show=False)
+                    st.pyplot(fig)
+                except Exception as e:
+                    st.warning(f"SHAP error: {e}")
 
 # =========================================================
 # REGISTRY
