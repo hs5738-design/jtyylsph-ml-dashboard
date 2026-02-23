@@ -1,6 +1,6 @@
 # =========================================================
-# JTYYLSPH V5 ENTERPRISE AI PLATFORM — V5.8 ELITE MERGE
-# Production-Ready • Persistent Models • JSON Registry • Audit Logging
+# JTYYLSPH V6.2 PRO MAX — ENTERPRISE AI PLATFORM
+# Production • Persistent Models • Registry • Explainability
 # =========================================================
 
 import streamlit as st
@@ -9,7 +9,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import datetime
 import json
-import pickle
 import os
 import joblib
 
@@ -29,7 +28,7 @@ except:
 
 
 # =========================================================
-# CONFIGURATION (V8 SAFE SYSTEM)
+# CONFIG
 # =========================================================
 
 MODEL_REGISTRY = "model_registry.json"
@@ -40,7 +39,7 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 
 # =========================================================
-# SAFE REGISTRY FUNCTIONS (V8)
+# REGISTRY
 # =========================================================
 
 def load_registry():
@@ -63,14 +62,21 @@ def save_registry(reg):
         json.dump(reg, f, indent=2)
 
 
-def register_model(name, model, metrics):
+def register_model(name, model, features, metrics):
 
     registry = load_registry()
 
-    version = len(registry) + 1
+    versions = [r["version"] for r in registry if r["name"] == name]
+    version = max(versions) + 1 if versions else 1
+
     model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pkl")
 
-    joblib.dump(model, model_path)
+    artifact = {
+        "model": model,
+        "features": features
+    }
+
+    joblib.dump(artifact, model_path)
 
     record = {
         "name": name,
@@ -96,14 +102,55 @@ def load_models_from_registry():
             if not path or not os.path.exists(path):
                 continue
 
-            model = joblib.load(path)
+            artifact = joblib.load(path)
 
-            models[rec["name"]] = model
+            models[rec["name"]] = artifact
 
-        except:
+        except Exception:
             pass
 
     return models
+
+
+# =========================================================
+# HELPERS
+# =========================================================
+
+def safe_barh(names, values, title):
+
+    names = list(names)
+    values = list(values)
+
+    if len(names) != len(values):
+        min_len = min(len(names), len(values))
+        names = names[:min_len]
+        values = values[:min_len]
+
+    fig, ax = plt.subplots()
+    ax.barh(names, values)
+    ax.set_title(title)
+    st.pyplot(fig)
+
+
+def align_features(df, feature_order):
+    return df.reindex(columns=feature_order, fill_value=0)
+
+
+def log_prediction(data, pred, prob, model_name):
+
+    entry = {
+        "time": datetime.datetime.utcnow().isoformat(),
+        "input": data,
+        "prediction": int(pred),
+        "probability": float(prob) if prob is not None else None,
+        "model": model_name
+    }
+
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except:
+        pass
 
 
 # =========================================================
@@ -114,7 +161,7 @@ if "trained_models" not in st.session_state:
     st.session_state.trained_models = {}
 
 if "leaderboard" not in st.session_state:
-    st.session_state.leaderboard = []
+    st.session_state.leaderboard = {}
 
 if "training_done" not in st.session_state:
     st.session_state.training_done = False
@@ -123,19 +170,32 @@ if "feature_names" not in st.session_state:
     st.session_state.feature_names = []
 
 
+# Auto load models
+if not st.session_state.trained_models:
+
+    loaded = load_models_from_registry()
+
+    if loaded:
+        for name, artifact in loaded.items():
+            st.session_state.trained_models[name] = artifact["model"]
+            st.session_state.feature_names = artifact.get("features", [])
+
+        st.session_state.training_done = True
+
+
 # =========================================================
-# TITLE
+# UI
 # =========================================================
 
-st.title("🚀 JTYYLSPH V5 ENTERPRISE AI PLATFORM")
-st.caption("AutoML • MLOps • Drift Detection • Explainability • Audit Logging")
+st.title("🚀 JTYYLSPH V6.2 PRO MAX AI PLATFORM")
+st.caption("AutoML • MLOps • Registry • Drift Detection • Explainability")
 
 
 # =========================================================
-# DATASET
+# DATA
 # =========================================================
 
-st.sidebar.header("📂 Dataset")
+st.sidebar.header("Dataset")
 
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
@@ -145,28 +205,20 @@ domain = st.sidebar.selectbox(
 )
 
 if uploaded:
+
     df = pd.read_csv(uploaded)
     target_col = st.sidebar.selectbox("Target Column", df.columns)
+
     X = df.drop(columns=[target_col])
     y = df[target_col]
 
 else:
-    if domain == "Finance":
-        X_data, y_data = make_classification(
-            n_samples=500, n_features=6, n_informative=4, random_state=42
-        )
-    elif domain == "Healthcare":
-        X_data, y_data = make_classification(
-            n_samples=500, n_features=8, n_informative=5, random_state=1
-        )
-    elif domain == "Sports":
-        X_data, y_data = make_classification(
-            n_samples=500, n_features=5, n_informative=3, random_state=7
-        )
-    else:
-        X_data, y_data = make_classification(
-            n_samples=400, n_features=4, random_state=0
-        )
+
+    X_data, y_data = make_classification(
+        n_samples=500,
+        n_features=6,
+        random_state=42
+    )
 
     X = pd.DataFrame(X_data)
     y = pd.Series(y_data)
@@ -200,35 +252,17 @@ param_grids = {
 
 
 # =========================================================
-# LOGGING
-# =========================================================
-
-def log_prediction(data, pred, prob, model_name):
-
-    entry = {
-        "time": datetime.datetime.utcnow().isoformat(),
-        "input": data,
-        "prediction": int(pred),
-        "probability": float(prob) if prob is not None else None,
-        "model": model_name
-    }
-
-    with open(LOG_FILE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
-
-
-# =========================================================
 # TABS
 # =========================================================
 
 tabs = st.tabs([
-    "🤖 Training",
-    "📊 Model Comparison",
-    "🔮 Prediction",
-    "📈 Monitoring",
-    "🧠 Explainability",
-    "🗂 Registry",
-    "📜 Audit Logs"
+    "Training",
+    "Comparison",
+    "Prediction",
+    "Monitoring",
+    "Explainability",
+    "Registry",
+    "Audit Logs"
 ])
 
 
@@ -238,12 +272,9 @@ tabs = st.tabs([
 
 with tabs[0]:
 
-    st.header("AutoML Training")
-
-    if st.button("Train All Models"):
+    if st.button("Train Models"):
 
         st.session_state.leaderboard = {}
-        best_score = 0
 
         for name, model in models.items():
 
@@ -256,28 +287,20 @@ with tabs[0]:
 
             preds = model.predict(X_test)
 
-            acc = accuracy_score(y_test, preds)
-            prec = precision_score(y_test, preds, average="weighted")
-            rec = recall_score(y_test, preds, average="weighted")
-            f1 = f1_score(y_test, preds, average="weighted")
-
             metrics = {
-                "accuracy": acc,
-                "precision": prec,
-                "recall": rec,
-                "f1": f1
+                "accuracy": accuracy_score(y_test, preds),
+                "precision": precision_score(y_test, preds, average="weighted"),
+                "recall": recall_score(y_test, preds, average="weighted"),
+                "f1": f1_score(y_test, preds, average="weighted")
             }
 
             st.session_state.trained_models[name] = model
             st.session_state.leaderboard[name] = metrics
 
-            register_model(name, model, metrics)
-
-            if acc > best_score:
-                best_score = acc
+            register_model(name, model, feature_names, metrics)
 
         st.session_state.training_done = True
-        st.success("✅ Training Complete")
+        st.success("Training Complete")
 
 
 # =========================================================
@@ -286,8 +309,6 @@ with tabs[0]:
 
 with tabs[1]:
 
-    st.header("Model Performance Comparison")
-
     if st.session_state.training_done:
 
         df_lb = pd.DataFrame(st.session_state.leaderboard).T
@@ -295,32 +316,32 @@ with tabs[1]:
 
         st.bar_chart(df_lb["accuracy"])
 
+        champion = df_lb["accuracy"].idxmax()
+        st.success(f"Champion Model: {champion}")
+
     else:
-        st.info("Train models first.")
+        st.info("Train models first")
 
 
 # =========================================================
-# PREDICTION (V8 FIXED FEATURE ALIGNMENT)
+# PREDICTION
 # =========================================================
 
 with tabs[2]:
 
-    st.header("Manual Prediction")
-
     if not st.session_state.training_done:
-        st.info("Train models first.")
+        st.info("Train models first")
+
     else:
 
         feature_names = st.session_state.feature_names
 
         inputs = []
-
         for f in feature_names:
-            val = st.number_input(f, value=0.0)
-            inputs.append(val)
+            inputs.append(st.number_input(f, value=0.0))
 
         model_name = st.selectbox(
-            "Select Model",
+            "Model",
             list(st.session_state.trained_models.keys())
         )
 
@@ -329,6 +350,7 @@ with tabs[2]:
             model = st.session_state.trained_models[model_name]
 
             input_df = pd.DataFrame([inputs], columns=feature_names)
+            input_df = align_features(input_df, feature_names)
 
             pred = model.predict(input_df)[0]
 
@@ -352,8 +374,6 @@ with tabs[2]:
 
 with tabs[3]:
 
-    st.header("Monitoring & Drift Detection")
-
     st.write(X.describe())
 
     col = st.selectbox("Feature", feature_names)
@@ -361,7 +381,7 @@ with tabs[3]:
     stat, p = ks_2samp(X_train[col], X_test[col])
 
     if p < 0.05:
-        st.warning("⚠️ Possible Drift Detected")
+        st.warning("Possible Drift")
     else:
         st.success("No Drift")
 
@@ -372,42 +392,48 @@ with tabs[3]:
 
 with tabs[4]:
 
-    st.header("Model Explainability")
-
     if not st.session_state.training_done:
-        st.info("Train models first.")
+        st.info("Train models first")
 
     else:
 
         model_name = st.selectbox(
-            "Select Model",
-            list(st.session_state.trained_models.keys()),
-            key="explain"
+            "Model",
+            list(st.session_state.trained_models.keys())
         )
 
         model = st.session_state.trained_models[model_name]
 
         if hasattr(model, "feature_importances_"):
 
-            fig, ax = plt.subplots()
-            ax.barh(feature_names, model.feature_importances_)
-            st.pyplot(fig)
+            safe_barh(
+                feature_names,
+                model.feature_importances_,
+                "Feature Importance"
+            )
 
         elif hasattr(model, "coef_"):
 
             coefs = np.abs(model.coef_[0])
 
-            fig, ax = plt.subplots()
-            ax.barh(feature_names, coefs)
-            st.pyplot(fig)
+            safe_barh(
+                feature_names,
+                coefs,
+                "Coefficient Importance"
+            )
 
-        if SHAP_AVAILABLE:
-            if st.button("Run SHAP"):
+        if SHAP_AVAILABLE and st.button("Run SHAP"):
+
+            try:
                 explainer = shap.Explainer(model, X_train)
                 shap_values = explainer(X_test[:100])
+
                 fig = plt.figure()
                 shap.summary_plot(shap_values, X_test[:100], show=False)
                 st.pyplot(fig)
+
+            except Exception as e:
+                st.warning(f"SHAP error: {e}")
 
 
 # =========================================================
@@ -416,28 +442,24 @@ with tabs[4]:
 
 with tabs[5]:
 
-    st.header("Model Registry")
-
     reg = load_registry()
 
     if reg:
         st.dataframe(pd.DataFrame(reg))
     else:
-        st.info("No registry entries yet.")
+        st.info("No models registered")
 
 
 # =========================================================
-# AUDIT LOGS
+# LOGS
 # =========================================================
 
 with tabs[6]:
 
-    st.header("Prediction Audit Logs")
-
     if os.path.exists(LOG_FILE):
 
-        logs = [json.loads(line) for line in open(LOG_FILE)]
+        logs = [json.loads(l) for l in open(LOG_FILE)]
         st.dataframe(pd.DataFrame(logs))
 
     else:
-        st.info("No logs yet.")
+        st.info("No logs yet")
