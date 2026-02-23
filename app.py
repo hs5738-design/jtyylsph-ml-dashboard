@@ -288,22 +288,43 @@ with tabs[1]:
 # =========================================================
 # PREDICTION
 # =========================================================
-
-with tabs[2]:
+with tabs[2]:  # Prediction
     if not st.session_state.training_done:
         st.info("Train models first")
     else:
-        inputs = [st.number_input(f, value=0.0) for f in feature_names]
-        model_name = st.selectbox("Model", list(st.session_state.trained_models.keys()))
-        key = "predict_model_selectbox"
-        if st.button("Predict"):
+        feature_names = st.session_state.feature_names
+
+        st.subheader("Manual Prediction")
+        inputs = []
+        for f in feature_names:
+            inputs.append(st.number_input(f, value=0.0, key=f"predict_input_{f}"))
+
+        model_name = st.selectbox(
+            "Select Model for Prediction",
+            list(st.session_state.trained_models.keys()),
+            key="predict_model_selectbox"
+        )
+
+        if st.button("Predict", key="predict_button"):
             model = st.session_state.trained_models[model_name]
+
             input_df = pd.DataFrame([inputs], columns=feature_names)
             input_df = align_features(input_df, feature_names)
+
             pred = model.predict(input_df)[0]
-            prob = model.predict_proba(input_df)[0][1] if hasattr(model, "predict_proba") else None
+
+            prob = None
+            if hasattr(model, "predict_proba"):
+                prob = model.predict_proba(input_df)[0][1]
+
             st.success(f"Prediction: {pred}")
-            log_prediction(input_df.to_dict(orient="records")[0], pred, prob, model_name)
+
+            log_prediction(
+                input_df.to_dict(orient="records")[0],
+                pred,
+                prob,
+                model_name
+            )
 
 # =========================================================
 # MONITORING
@@ -321,28 +342,49 @@ with tabs[3]:
 # =========================================================
 # EXPLAINABILITY
 # =========================================================
-
-with tabs[4]:
+with tabs[4]:  # Explainability
     if not st.session_state.training_done:
         st.info("Train models first")
     else:
-        model_name = st.selectbox("Model", list(st.session_state.trained_models.keys()))
-        key = "explain_model_selectbox"
+        st.subheader("Model Explainability")
+
+        model_name = st.selectbox(
+            "Select Model for Explainability",
+            list(st.session_state.trained_models.keys()),
+            key="explain_model_selectbox"
+        )
+
         model = st.session_state.trained_models[model_name]
+
+        # Tree-based models
         if hasattr(model, "feature_importances_"):
-            safe_barh(feature_names, model.feature_importances_, "Feature Importance")
+            safe_barh(
+                feature_names,
+                model.feature_importances_,
+                "Feature Importance"
+            )
+
+        # Linear models
         elif hasattr(model, "coef_"):
             coefs = np.abs(model.coef_[0])
-            safe_barh(feature_names, coefs, "Coefficient Importance")
-        if SHAP_AVAILABLE and st.button("Run SHAP"):
-            try:
-                explainer = shap.Explainer(model, X_train)
-                shap_values = explainer(X_test[:100])
-                fig = plt.figure()
-                shap.summary_plot(shap_values, X_test[:100], show=False)
-                st.pyplot(fig)
-            except Exception as e:
-                st.warning(f"SHAP error: {e}")
+            safe_barh(
+                feature_names,
+                coefs,
+                "Coefficient Importance"
+            )
+
+        # SHAP explanation
+        if SHAP_AVAILABLE:
+            if st.button("Run SHAP", key="shap_button"):
+                try:
+                    explainer = shap.Explainer(model, X_train)
+                    shap_values = explainer(X_test[:100])
+
+                    fig = plt.figure()
+                    shap.summary_plot(shap_values, X_test[:100], show=False)
+                    st.pyplot(fig)
+                except Exception as e:
+                    st.warning(f"SHAP error: {e}")
 
 # =========================================================
 # REGISTRY
