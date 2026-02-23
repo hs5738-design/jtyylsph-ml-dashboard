@@ -61,7 +61,6 @@ def save_registry(reg):
     with open(MODEL_REGISTRY, "w") as f:
         json.dump(reg, f, indent=2)
 
-
 def register_model(name, model, features, metrics):
 
     registry = load_registry()
@@ -73,7 +72,8 @@ def register_model(name, model, features, metrics):
 
     artifact = {
         "model": model,
-        "features": features
+        "metrics": metrics,
+        "feature_names": features   # ✅ FIXED
     }
 
     joblib.dump(artifact, model_path)
@@ -88,7 +88,6 @@ def register_model(name, model, features, metrics):
 
     registry.append(record)
     save_registry(registry)
-
 
 def load_models_from_registry():
 
@@ -169,19 +168,51 @@ if "training_done" not in st.session_state:
 if "feature_names" not in st.session_state:
     st.session_state.feature_names = []
 
+# =========================================================
+# AUTO LOAD MODELS FROM REGISTRY (SAFE)
+# =========================================================
 
-# Auto load models
 if not st.session_state.trained_models:
 
-    loaded = load_models_from_registry()
+    registry = load_registry()
 
-    if loaded:
-        for name, artifact in loaded.items():
-            st.session_state.trained_models[name] = artifact["model"]
-            st.session_state.feature_names = artifact.get("features", [])
+    for rec in registry:
 
+        try:
+            path = rec.get("path")
+
+            if not path or not os.path.exists(path):
+                continue
+
+            artifact = joblib.load(path)
+
+            # Support both old and new artifact formats
+            if isinstance(artifact, dict) and "model" in artifact:
+                model_obj = artifact["model"]
+                features = artifact.get("feature_names", [])
+                metrics = artifact.get("metrics", {})
+            else:
+                model_obj = artifact
+                features = []
+                metrics = {}
+
+            name = rec.get("name", "model")
+
+            st.session_state.trained_models[name] = model_obj
+
+            # Restore leaderboard
+            if metrics:
+                st.session_state.leaderboard[name] = metrics
+
+            # Restore features
+            if features:
+                st.session_state.feature_names = features
+
+        except Exception as e:
+            print("Load error:", e)
+
+    if st.session_state.trained_models:
         st.session_state.training_done = True
-
 
 # =========================================================
 # UI
