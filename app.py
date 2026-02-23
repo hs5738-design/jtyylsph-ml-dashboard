@@ -1,406 +1,195 @@
-# =========================================================
-# JTYYLSPH V6 PRO ENTERPRISE AI PLATFORM
-# Full MLOps • Registry Lifecycle • Batch Prediction • SHAP
-# =========================================================
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import json
 import os
-import pickle
-import datetime
-
-from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split, GridSearchCV
+import json
+import joblib
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from scipy.stats import ks_2samp
 
-# Optional SHAP
-try:
-    import shap
-    SHAP_AVAILABLE = True
-except:
-    SHAP_AVAILABLE = False
+st.set_page_config(page_title="ML Dashboard V7 ELITE", layout="wide")
 
-# =========================================================
-# CONFIG
-# =========================================================
+MODEL_DIR = "models"
+REGISTRY_FILE = "registry.json"
 
-ARTIFACT_DIR = "artifacts"
-REGISTRY_FILE = "model_registry.json"
-LOG_FILE = "prediction_logs.jsonl"
-
-os.makedirs(ARTIFACT_DIR, exist_ok=True)
-
-# =========================================================
-# SESSION INIT
-# =========================================================
-
-if "models" not in st.session_state:
-    st.session_state.models = {}
-
-if "leaderboard" not in st.session_state:
-    st.session_state.leaderboard = []
-
-if "best_model" not in st.session_state:
-    st.session_state.best_model = None
-
-# =========================================================
-# UTILITIES
-# =========================================================
-
-def save_registry(record):
-    if os.path.exists(REGISTRY_FILE):
-        registry = json.load(open(REGISTRY_FILE))
-    else:
-        registry = []
-
-    registry.append(record)
-    json.dump(registry, open(REGISTRY_FILE, "w"), indent=2)
+os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-def save_model(model, name, metrics):
+# -----------------------------
+# Registry Utilities
+# -----------------------------
+def load_registry():
+    if not os.path.exists(REGISTRY_FILE):
+        return []
 
-    version = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    path = f"{ARTIFACT_DIR}/{name}_{version}.pkl"
+    try:
+        with open(REGISTRY_FILE, "r") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            return []
+    except:
+        return []
 
-    with open(path, "wb") as f:
-        pickle.dump(model, f)
+
+def save_registry(registry):
+    with open(REGISTRY_FILE, "w") as f:
+        json.dump(registry, f, indent=2)
+
+
+def register_model(name, path, accuracy):
+    registry = load_registry()
 
     record = {
         "name": name,
-        "version": version,
-        "stage": "Dev",
-        "metrics": metrics,
         "path": path,
-        "timestamp": datetime.datetime.utcnow().isoformat()
+        "accuracy": float(accuracy)
     }
 
-    save_registry(record)
+    registry.append(record)
+    save_registry(registry)
 
 
-def load_models_from_registry():
-    if not os.path.exists(REGISTRY_FILE):
-        return
-
-    registry = json.load(open(REGISTRY_FILE))
+# -----------------------------
+# Load Models Safely
+# -----------------------------
+def load_models():
+    registry = load_registry()
+    models = []
 
     for rec in registry:
-        path = rec["path"]
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                st.session_state.models[rec["name"]] = pickle.load(f)
+        try:
+            path = rec.get("path")
 
+            if not path or not os.path.exists(path):
+                continue
 
-def log_prediction(data, pred, model_name):
-    entry = {
-        "time": datetime.datetime.utcnow().isoformat(),
-        "input": data,
-        "prediction": int(pred),
-        "model": model_name
-    }
+            model = joblib.load(path)
 
-    with open(LOG_FILE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
-
-
-load_models_from_registry()
-
-# =========================================================
-# UI
-# =========================================================
-
-st.title("🚀 JTYYLSPH V6 PRO Enterprise AI Platform")
-
-tabs = st.tabs([
-    "🤖 Training",
-    "📊 Comparison",
-    "🔮 Prediction",
-    "📂 Batch",
-    "📈 Monitoring",
-    "🧠 Explainability",
-    "⚖️ Fairness",
-    "🗂 Registry",
-    "📜 Audit"
-])
-
-# =========================================================
-# DATA
-# =========================================================
-
-X_data, y_data = make_classification(
-    n_samples=500,
-    n_features=6,
-    n_informative=4,
-    random_state=42
-)
-
-X = pd.DataFrame(X_data)
-y = pd.Series(y_data)
-
-feature_names = list(X.columns)
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
-
-# =========================================================
-# TRAINING
-# =========================================================
-
-models_config = {
-    "RandomForest": (RandomForestClassifier(), {"n_estimators": [100, 200]}),
-    "GradientBoosting": (GradientBoostingClassifier(), {"n_estimators": [100, 200]}),
-    "LogisticRegression": (LogisticRegression(max_iter=1000), None)
-}
-
-with tabs[0]:
-
-    st.header("AutoML Training")
-
-    if st.button("Train Models"):
-
-        leaderboard = []
-        best_acc = 0
-
-        for name, (model, grid) in models_config.items():
-
-            if grid:
-                gs = GridSearchCV(model, grid, cv=3)
-                gs.fit(X_train, y_train)
-                model = gs.best_estimator_
-            else:
-                model.fit(X_train, y_train)
-
-            preds = model.predict(X_test)
-            acc = accuracy_score(y_test, preds)
-
-            st.session_state.models[name] = model
-
-            leaderboard.append({
-                "Model": name,
-                "Accuracy": acc
+            models.append({
+                "name": rec.get("name", "Unknown"),
+                "model": model,
+                "accuracy": rec.get("accuracy", 0)
             })
 
-            save_model(model, name, {"accuracy": acc})
+        except Exception as e:
+            st.warning(f"Failed loading model: {rec}")
 
-            if acc > best_acc:
-                best_acc = acc
-                st.session_state.best_model = model
+    return models
 
-        st.session_state.leaderboard = leaderboard
-        st.success("Training Complete")
 
-# =========================================================
-# COMPARISON
-# =========================================================
+# -----------------------------
+# Sidebar Navigation
+# -----------------------------
+menu = st.sidebar.radio(
+    "Navigation",
+    ["Upload Data", "Train Model", "Comparison", "Monitoring"]
+)
 
-with tabs[1]:
+st.title("🚀 ML Dashboard V7 ELITE")
 
-    if st.session_state.leaderboard:
-        df = pd.DataFrame(st.session_state.leaderboard)
-        st.dataframe(df)
 
-        fig, ax = plt.subplots()
-        ax.bar(df["Model"], df["Accuracy"])
-        st.pyplot(fig)
+# -----------------------------
+# Upload Data
+# -----------------------------
+if menu == "Upload Data":
 
-# =========================================================
-# PREDICTION
-# =========================================================
+    file = st.file_uploader("Upload CSV", type=["csv"])
 
-with tabs[2]:
+    if file:
+        df = pd.read_csv(file)
+        st.session_state["data"] = df
+        st.success("Data loaded")
+        st.dataframe(df.head())
 
-    if not st.session_state.models:
-        st.warning("Train models first")
-    else:
 
-        inputs = {}
+# -----------------------------
+# Train Model
+# -----------------------------
+elif menu == "Train Model":
 
-        for f in feature_names:
-            inputs[f] = st.number_input(f, value=0.0)
+    if "data" not in st.session_state:
+        st.warning("Upload data first")
+        st.stop()
 
-        model_name = st.selectbox(
-            "Model",
-            list(st.session_state.models.keys())
+    df = st.session_state["data"]
+
+    target = st.selectbox("Select Target Column", df.columns)
+
+    model_type = st.selectbox(
+        "Model Type",
+        ["RandomForest", "LogisticRegression"]
+    )
+
+    if st.button("Train"):
+
+        X = df.drop(columns=[target])
+        y = df[target]
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
         )
 
-        if st.button("Predict"):
+        if model_type == "RandomForest":
+            model = RandomForestClassifier()
+        else:
+            model = LogisticRegression(max_iter=1000)
 
-            model = st.session_state.models[model_name]
-
-            input_df = pd.DataFrame([inputs])[feature_names]
-
-            pred = model.predict(input_df)[0]
-
-            st.success(f"Prediction: {pred}")
-
-            log_prediction(inputs, pred, model_name)
-
-# =========================================================
-# BATCH PREDICTION
-# =========================================================
-
-with tabs[3]:
-
-    st.header("Batch Prediction")
-
-    file = st.file_uploader("Upload CSV for batch prediction")
-
-    if file and st.session_state.models:
-
-        df_batch = pd.read_csv(file)
-
-        model_name = st.selectbox(
-            "Model for Batch",
-            list(st.session_state.models.keys()),
-            key="batch"
-        )
-
-        if st.button("Run Batch"):
-
-            model = st.session_state.models[model_name]
-
-            preds = model.predict(df_batch[feature_names])
-
-            df_batch["prediction"] = preds
-
-            st.dataframe(df_batch)
-
-            csv = df_batch.to_csv(index=False).encode()
-
-            st.download_button(
-                "Download Predictions",
-                csv,
-                "predictions.csv"
-            )
-
-# =========================================================
-# MONITORING
-# =========================================================
-
-with tabs[4]:
-
-    st.header("Monitoring")
-
-    st.write(X.describe())
-
-    corr = X.corr()
-
-    fig, ax = plt.subplots()
-    cax = ax.matshow(corr)
-    plt.colorbar(cax)
-    st.pyplot(fig)
-
-    st.subheader("Drift Detection")
-
-    col = st.selectbox("Feature", feature_names)
-
-    stat, p = ks_2samp(X_train[col], X_test[col])
-
-    if p < 0.05:
-        st.warning("Drift detected")
-    else:
-        st.success("No drift")
-
-# =========================================================
-# EXPLAINABILITY
-# =========================================================
-
-with tabs[5]:
-
-    if not st.session_state.models:
-        st.warning("Train models first")
-
-    else:
-
-        model_name = st.selectbox(
-            "Model",
-            list(st.session_state.models.keys()),
-            key="exp"
-        )
-
-        model = st.session_state.models[model_name]
-
-        if SHAP_AVAILABLE:
-
-            if st.button("Run SHAP"):
-
-                explainer = shap.Explainer(model, X_train)
-                shap_values = explainer(X_test[:100])
-
-                fig = plt.figure()
-                shap.summary_plot(shap_values, X_test[:100], show=False)
-                st.pyplot(fig)
-
-        if hasattr(model, "feature_importances_"):
-
-            imp = model.feature_importances_
-
-            fig, ax = plt.subplots()
-            ax.barh(feature_names, imp)
-            st.pyplot(fig)
-
-# =========================================================
-# FAIRNESS
-# =========================================================
-
-with tabs[6]:
-
-    st.header("Fairness Analysis")
-
-    group = st.selectbox("Group Feature", feature_names)
-
-    if st.session_state.models:
-
-        model_name = st.selectbox(
-            "Model",
-            list(st.session_state.models.keys()),
-            key="fair"
-        )
-
-        model = st.session_state.models[model_name]
+        model.fit(X_train, y_train)
 
         preds = model.predict(X_test)
+        acc = accuracy_score(y_test, preds)
 
-        df_fair = X_test.copy()
-        df_fair["target"] = y_test.values
-        df_fair["pred"] = preds
+        model_name = f"{model_type}_{len(load_registry())+1}"
+        model_path = os.path.join(MODEL_DIR, model_name + ".pkl")
 
-        group_acc = df_fair.groupby(group).apply(
-            lambda d: accuracy_score(d["target"], d["pred"])
-        )
+        joblib.dump(model, model_path)
 
-        st.write(group_acc)
+        register_model(model_name, model_path, acc)
 
-# =========================================================
-# REGISTRY
-# =========================================================
+        st.success(f"Model trained: {model_name}")
+        st.write("Accuracy:", acc)
 
-with tabs[7]:
 
-    st.header("Model Registry")
+# -----------------------------
+# Comparison
+# -----------------------------
+elif menu == "Comparison":
 
-    if os.path.exists(REGISTRY_FILE):
+    models = load_models()
 
-        registry = json.load(open(REGISTRY_FILE))
-        df = pd.DataFrame(registry)
+    if not models:
+        st.warning("No models available")
+        st.stop()
 
-        st.dataframe(df)
+    df = pd.DataFrame([
+        {"Model": m["name"], "Accuracy": m["accuracy"]}
+        for m in models
+    ])
 
-# =========================================================
-# AUDIT
-# =========================================================
+    st.subheader("Model Comparison")
+    st.dataframe(df)
 
-with tabs[8]:
+    st.bar_chart(df.set_index("Model"))
 
-    st.header("Prediction Logs")
 
-    if os.path.exists(LOG_FILE):
+# -----------------------------
+# Monitoring
+# -----------------------------
+elif menu == "Monitoring":
 
-        logs = [json.loads(l) for l in open(LOG_FILE)]
-        st.dataframe(pd.DataFrame(logs))
+    models = load_models()
+
+    if not models:
+        st.warning("No models available")
+        st.stop()
+
+    best_model = max(models, key=lambda x: x["accuracy"])
+
+    st.subheader("Best Model")
+    st.write("Name:", best_model["name"])
+    st.write("Accuracy:", best_model["accuracy"])
+
+    st.success("System Healthy ✅")
