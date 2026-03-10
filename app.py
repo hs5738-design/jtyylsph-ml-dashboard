@@ -264,32 +264,39 @@ if not st.session_state.trained_models:
 # =========================================================
 
 st.title("🚀 JTYYLSPH — AI Governance Platform")
-
 # =========================================================
 # DATA
 # =========================================================
 
+st.sidebar.header("Compliance Mode")
+jurisdiction = st.sidebar.selectbox(
+    "Select Regulatory Framework",
+    ["United States (SR 11-7)", 
+     "European Union (EU AI Act)", 
+     "UK Model Risk Guidance",
+     "APAC General Risk Framework",
+     "Custom Enterprise Policy"]
+)
+st.sidebar.header("Dataset")
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+domain = st.sidebar.selectbox("Synthetic Dataset", ["Finance", "Healthcare", "Sports", "General"])
 
 if uploaded:
-
     df = pd.read_csv(uploaded)
-    target = st.sidebar.selectbox("Target Column", df.columns)
-
-    X = df.drop(columns=[target])
-    y = df[target]
-
+    target_col = st.sidebar.selectbox("Target Column", df.columns)
+    X = df.drop(columns=[target_col])
+    y = df[target_col]
 else:
-
     X_data, y_data = make_classification(n_samples=500, n_features=6, random_state=42)
     X = pd.DataFrame(X_data)
     y = pd.Series(y_data)
 
+X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
+st.session_state.feature_names = feature_names
+st.write("Dataset Shape:", X.shape)
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # =========================================================
 # MODELS
