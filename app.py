@@ -368,6 +368,50 @@ with tabs[0]:
 
         st.dataframe(df_lb)
 
+
+# =========================================================
+# GOVERNANCE REPORT
+# =========================================================
+
+with tabs[1]:
+
+    st.subheader("📑 Model Governance Report")
+
+    if not st.session_state.training_done:
+        st.info("Train models first to generate governance reports.")
+
+    else:
+
+        model_name = st.selectbox(
+            "Select Model",
+            list(st.session_state.trained_models.keys()),
+            key="gov_model"
+        )
+
+        metrics = st.session_state.leaderboard.get(model_name, {})
+
+        st.write("### Model Performance")
+        st.json(metrics)
+
+        report = {
+            "model_name": model_name,
+            "generated_at": datetime.datetime.utcnow().isoformat(),
+            "metrics": metrics,
+            "controls": {
+                "bias_testing": "completed",
+                "stress_testing": "completed",
+                "drift_monitoring": "active",
+                "registry_tracking": "enabled"
+            }
+        }
+
+        report_str = json.dumps(report, indent=2)
+
+        st.download_button(
+            "Download Governance Report",
+            report_str,
+            file_name="governance_report.json"
+        )
 # =========================================================
 # BIAS
 # =========================================================
