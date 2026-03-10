@@ -25,11 +25,17 @@ try:
     SHAP_AVAILABLE = True
 except:
     SHAP_AVAILABLE = False
+from scipy.stats import wasserstein_distance, ks_2samp
+import hashlib
 
+language = st.sidebar.selectbox(
+    "Language",
+    ["English", "Spanish", "French", "German", "Mandarin (beta)"]
+)
 # =========================================================
 # CONFIG
 # =========================================================
-
+PREDICTION_DRIFT_LOG = "drift_logs.jsonl"
 MODEL_REGISTRY = "model_registry.json"
 MODEL_DIR = "models"
 LOG_FILE = "prediction_logs.jsonl"
@@ -39,6 +45,10 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 # =========================================================
 # REGISTRY FUNCTIONS
 # =========================================================
+
+def model_hash(path): 
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 def load_registry():
     if not os.path.exists(MODEL_REGISTRY):
@@ -122,6 +132,19 @@ def load_models_from_registry():
 # HELPERS
 # =========================================================
 
+def log_drift_metrics(feature_name, train_values, test_values, metric_value, metric_name):
+    """Log drift monitoring metrics"""
+    entry = {
+        "time": datetime.datetime.utcnow().isoformat(),
+        "feature": feature_name,
+        "metric": metric_name,
+        "drift_score": float(metric_value)
+    }
+    try:
+        with open(PREDICTION_DRIFT_LOG, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except:
+        pass
 def safe_barh(names, values, title):
     names = list(names)
     values = list(values)
@@ -211,13 +234,23 @@ if not st.session_state.trained_models:
 # UI
 # =========================================================
 
-st.title("🚀 JTYYLSPH V6.2 PRO MAX AI PLATFORM")
+st.title("🚀JTYYLSPH — AI Governance & Model Risk Infrastructure")
+st.caption("Regulatory Stress Testing • Governance Reporting • Model Risk Monitoring")
 st.caption("AutoML • MLOps • Registry • Drift Detection • Explainability")
 
 # =========================================================
 # DATA
 # =========================================================
 
+st.sidebar.header("Compliance Mode")
+jurisdiction = st.sidebar.selectbox(
+    "Select Regulatory Framework",
+    ["United States (SR 11-7)", 
+     "European Union (EU AI Act)", 
+     "UK Model Risk Guidance",
+     "APAC General Risk Framework",
+     "Custom Enterprise Policy"]
+)
 st.sidebar.header("Dataset")
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 domain = st.sidebar.selectbox("Synthetic Dataset", ["Finance", "Healthcare", "Sports", "General"])
@@ -257,7 +290,16 @@ param_grids = {
 # TABS
 # =========================================================
 
-tabs = st.tabs(["Training", "Comparison", "Prediction", "Monitoring", "Explainability", "Registry", "Audit Logs"])
+tabs = st.tabs([
+    "Training",
+    "Governance Report",
+    "Bias & Fairness",
+    "Stress Testing",
+    "Monitoring",
+    "Explainability",
+    "Registry",
+    "Audit Logs"
+])
 
 # =========================================================
 # TRAINING
@@ -288,90 +330,162 @@ with tabs[0]:
 
         st.session_state.training_done = True
         st.success("✅ Training Complete")
-# =========================================================
+
+from sklearn.metrics import confusion_matrix
+
+def fairness_analysis(model, X_test, y_test, sensitive_feature=None):
+    preds = model.predict(X_test)
+    acc = accuracy_score(y_test, preds)
+
+    result = {
+        "overall_accuracy": acc
+    }
+
+    if sensitive_feature and sensitive_feature in X_test.columns:
+        groups = X_test[sensitive_feature].unique()
+        group_metrics = {}
+        for g in groups:
+            mask = X_test[sensitive_feature] == g
+            if mask.sum() > 0:
+                group_acc = accuracy_score(y_test[mask], preds[mask])
+                group_metrics[str(g)] = group_acc
+        result["group_accuracy"] = group_metrics
+
+    return result
+
+tabs = st.tabs([
+    "Training",
+    "Governance Report",
+    "Bias & Fairness",
+    "Stress Testing",
+    "Monitoring",
+    "Explainability",
+    "Registry",
+    "Audit Logs"
+])
+# 
+=========================================================
 # COMPARISON
 # =========================================================
 
-with tabs[1]:  # Comparison tab
-    if st.session_state.training_done:
-        # Build leaderboard dataframe
-        df_lb = pd.DataFrame(st.session_state.leaderboard).T
+with tabs[1]:  # Governance Report
 
-        # Ensure all expected metric columns exist
-        for col in ["accuracy", "precision", "recall", "f1"]:
-            if col not in df_lb.columns:
-                df_lb[col] = 0.0
-
-        # Sort by accuracy descending
-        df_lb_sorted = df_lb.sort_values(by="accuracy", ascending=False)
-
-        st.dataframe(df_lb_sorted)
-
-        # Bar chart for accuracy
-        st.bar_chart(df_lb_sorted["accuracy"])
-
-        # Display champion model
-        champion = df_lb_sorted.index[0]
-        st.success(f"Champion Model: {champion}")
-
-    else:
+    if not st.session_state.training_done:
         st.info("Train models first")
+    else:
+        model_name = st.selectbox(
+            "Select Model for Governance Review",
+            list(st.session_state.trained_models.keys()),
+            key="gov_model_select"
+        )
+
+        metrics = st.session_state.leaderboard.get(model_name, {})
+
+        st.subheader("Model Performance Summary")
+        st.json(metrics)
+
+        if st.button("Generate Governance Summary"):
+
+            report = {
+                "jurisdiction": jurisdiction,
+                "model": model_name,
+                "metrics": metrics,
+                "generated_at": datetime.datetime.utcnow().isoformat()
+            }
+
+            report_str = json.dumps(report, indent=2)
+
+            st.download_button(
+                "Download Governance Report (JSON)",
+                report_str,
+                file_name="governance_report.json"
+            )
+
+            st.success("Governance report ready for audit submission.")
 
 # =========================================================
 # PREDICTION
 # =========================================================
-with tabs[2]:  # Prediction
+with tabs[2]:
     if not st.session_state.training_done:
         st.info("Train models first")
     else:
         feature_names = st.session_state.feature_names
-
-        st.subheader("Manual Prediction")
+        st.subheader("🔮 Manual Prediction")
         inputs = []
         for f in feature_names:
-            inputs.append(st.number_input(f, value=0.0, key=f"predict_input_{f}"))
-
+            inputs.append(st.number_input(f, value=0.0, key=f"pred_input_{f}"))
         model_name = st.selectbox(
-            "Select Model for Prediction",
+            "Select Model",
             list(st.session_state.trained_models.keys()),
-            key="predict_model_selectbox"
+            key="pred_model_selector"
         )
-
-        if st.button("Predict", key="predict_button"):
+        if st.button("Predict", key="predict_btn"):
             model = st.session_state.trained_models[model_name]
-
             input_df = pd.DataFrame([inputs], columns=feature_names)
             input_df = align_features(input_df, feature_names)
-
             pred = model.predict(input_df)[0]
-
             prob = None
             if hasattr(model, "predict_proba"):
                 prob = model.predict_proba(input_df)[0][1]
-
             st.success(f"Prediction: {pred}")
-
+            # Log prediction
             log_prediction(
                 input_df.to_dict(orient="records")[0],
                 pred,
                 prob,
                 model_name
             )
+            # ===== Production Drift Check =====
+            try:
+                ks_stat, ks_p = ks_2samp(
+                    X_train[feature_names[0]],
+                    X_test[feature_names[0]]
+                )
+                wasserstein_score = wasserstein_distance(
+                    X_train[feature_names[0]],
+                    X_test[feature_names[0]]
+                )
+                st.metric("Prediction Drift KS", f"{ks_p:.5f}")
+                st.metric("Prediction Drift Wasserstein", f"{wasserstein_score:.5f}")
+            except Exception:
+                pass
 
 # =========================================================
 # MONITORING
 # =========================================================
-
 with tabs[3]:
-    st.write(X.describe())
-    col = st.selectbox("Feature", feature_names)
-    stat, p = ks_2samp(X_train[col], X_test[col])
-    if p < 0.05:
-        st.warning("⚠️ Possible Drift Detected")
+    st.subheader("📊 Production Monitoring")
+    st.write("Dataset Statistics")
+    st.dataframe(X.describe())
+    feature = st.selectbox(
+        "Select Feature",
+        feature_names,
+        key="monitor_feature"
+    )
+    ks_stat, ks_p = ks_2samp(
+        X_train[feature],
+        X_test[feature]
+    )
+    wasserstein_score = wasserstein_distance(
+        X_train[feature],
+        X_test[feature]
+    )
+    st.metric("KS P Value", f"{ks_p:.5f}")
+    st.metric("Wasserstein Distance", f"{wasserstein_score:.5f}")
+    if ks_p < 0.05 or wasserstein_score > 0.1:
+        st.warning("⚠️ Distribution Drift Risk Detected")
     else:
-        st.success("No Drift")
+        st.success("✅ Stable Distribution")
+    log_drift_metrics(
+        feature,
+        X_train[feature],
+        X_test[feature],
+        wasserstein_score,
+        "production_monitoring"
+    )
 
-# =========================================================
+=========================================================
 # EXPLAINABILITY
 # =========================================================
 with tabs[4]:  # Explainability
@@ -439,3 +553,37 @@ with tabs[6]:
         st.dataframe(pd.DataFrame(logs))
     else:
         st.info("No logs yet")
+
+# =========================================================
+# Stress Testing
+# =========================================================
+with tabs[3]:  # Stress Testing
+
+    if not st.session_state.training_done:
+        st.info("Train models first")
+    else:
+        model_name = st.selectbox(
+            "Select Model for Stress Test",
+            list(st.session_state.trained_models.keys()),
+            key="stress_model_select"
+        )
+
+        model = st.session_state.trained_models[model_name]
+
+        shock = st.slider("Macro Shock Factor (%)", -50, 50, 10)
+        shock = shock / 100
+
+        def stress_test(model, X, shock_factor):
+            stressed_X = X.copy()
+            stressed_X = stressed_X * (1 + shock_factor)
+            preds = model.predict(stressed_X)
+            return float(np.mean(preds))
+
+        impact = stress_test(model, X_test, shock)
+
+        st.metric("Predicted Default Rate Under Stress", f"{impact:.4f}")
+
+        if impact > 0.5:
+            st.warning("⚠️ Elevated systemic risk under stress scenario.")
+        else:
+            st.success("✅ Model stable under stress conditions.")
