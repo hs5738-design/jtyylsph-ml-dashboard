@@ -206,7 +206,18 @@ def log_drift_metrics(feature, train, test, value, metric):
     except:
         pass
 
+def log_prediction(model_name):
 
+    entry = {
+        "time": datetime.datetime.utcnow().isoformat(),
+        "model": model_name
+    }
+
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except:
+        pass
 def load_json_lines(file):
 
     rows = []
@@ -255,7 +266,16 @@ if not st.session_state.trained_models:
         metrics = artifact.get("metrics", {})
 
         st.session_state.trained_models[name] = model
-        st.session_state.leaderboard[name] = metrics
+
+        if isinstance(metrics, dict):
+            st.session_state.leaderboard[name] = metrics
+        else:
+            st.session_state.leaderboard[name] = {
+                "accuracy": 0,
+                "precision": 0,
+                "recall": 0,
+                "f1": 0,
+            }
 
     st.session_state.training_done = bool(st.session_state.trained_models)
 
@@ -271,8 +291,8 @@ st.title("🚀 JTYYLSPH — AI Governance Platform")
 st.sidebar.header("Compliance Mode")
 jurisdiction = st.sidebar.selectbox(
     "Select Regulatory Framework",
-    ["United States (SR 11-7)", 
-     "European Union (EU AI Act)", 
+    ["United States (SR 11-7)",
+     "European Union (EU AI Act)",
      "UK Model Risk Guidance",
      "APAC General Risk Framework",
      "Custom Enterprise Policy"]
@@ -413,12 +433,26 @@ with tabs[1]:
         }
 
         report_str = json.dumps(report, indent=2)
+st.download_button(
+    "Download Governance Report",
+    report_str,
+    file_name="governance_report.json"
+)
 
-        st.download_button(
-            "Download Governance Report",
-            report_str,
-            file_name="governance_report.json"
-        )
+st.write("### Regulatory Framework")
+st.info(jurisdiction)
+
+risk_score = 1 - metrics.get("accuracy", 0)
+
+st.write("### Model Risk Rating")
+
+if risk_score < 0.1:
+    st.success("Low Model Risk")
+elif risk_score < 0.25:
+    st.warning("Moderate Model Risk")
+else:
+    st.error("High Model Risk")
+        
 # =========================================================
 # BIAS
 # =========================================================
@@ -476,6 +510,10 @@ with tabs[3]:
 
         st.metric("Default Rate", f"{impact:.4f}")
 
+        preds = model.predict(stressed)
+
+        log_prediction(model_name)
+
 # =========================================================
 # MONITORING
 # =========================================================
@@ -505,7 +543,6 @@ with tabs[4]:
 # =========================================================
 # EXPLAINABILITY
 # =========================================================
-
 with tabs[5]:
 
     if st.session_state.training_done:
@@ -520,12 +557,26 @@ with tabs[5]:
 
         if hasattr(model, "feature_importances_"):
 
-            safe_barh(feature_names, model.feature_importances_, "Importance")
+            importances = model.feature_importances_
+
+            safe_barh(
+                feature_names[:len(importances)],
+                importances,
+                "Feature Importance"
+            )
 
         elif hasattr(model, "coef_"):
 
-            safe_barh(feature_names, np.abs(model.coef_[0]), "Coefficients")
+            coefs = np.abs(model.coef_[0])
 
+            safe_barh(
+                feature_names[:len(coefs)],
+                coefs,
+                "Model Coefficients"
+            )
+
+        else:
+            st.info("Model type does not support built-in explainability.")
 # =========================================================
 # REGISTRY
 # =========================================================
@@ -539,7 +590,9 @@ with tabs[6]:
         for r in reg:
             r["hash"] = model_hash(r["path"])
 
-        st.dataframe(pd.DataFrame(reg))
+        df_reg = pd.DataFrame(reg)
+        df_reg = df_reg.sort_values(["name", "version"])
+        st.dataframe(df_reg)
 
 # =========================================================
 # AUDIT LOGS
