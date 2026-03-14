@@ -6,244 +6,227 @@ MIT License
 ![Streamlit](https://img.shields.io/badge/Deployed-Streamlit-red)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+# JTYYLSPH V7 — Enterprise AI Governance Platform
 
-# JTYYLSPH — Enterprise AI Governance Platform
-
-An end-to-end machine learning system for predictive classification, explainability, and decision analytics across multiple domains including finance, healthcare, and risk modeling.
-
-This project demonstrates production-oriented ML engineering with model evaluation, visualization, logging, and deployment via an interactive web application.
+![Python](https://img.shields.io/badge/Python-3.10-blue)
+![ML](https://img.shields.io/badge/Machine%20Learning-Scikit--Learn-orange)
+![Streamlit](https://img.shields.io/badge/Deployed-Streamlit-red)
+![Build](https://img.shields.io/github/actions/workflow/status/hs5738-design/jtyylsph-ml-dashboard/ci.yml)
+![Coverage](https://img.shields.io/codecov/c/github/hs5738-design/jtyylsph-ml-dashboard)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
 ## 🚀 Live Demo
 
 Streamlit App:  
-https://hs5738-design-jtyylsph-ml-dashboard-app-3ahbbg.streamlit.app/
+[https://hs5738-design-jtyylsph-ml-dashboard-app-3ahbbg.streamlit.app](https://hs5738-design-jtyylsph-ml-dashboard-app-3ahbbg.streamlit.app/)
+
+**Dashboard Preview:**  
+![Dashboard Screenshot](docs/screenshots/dashboard.png)
+![Feature Importance](docs/screenshots/feature_importance.png)
+![SHAP Explanation](docs/screenshots/shap_explainer.png)
 
 ---
 
 ## 📂 Repository
 
 GitHub:  
-https://github.com/hs5738-design/jtyylsph-ml-dashboard
+[https://github.com/hs5738-design/jtyylsph-ml-dashboard](https://github.com/hs5738-design/jtyylsph-ml-dashboard)
 
 ---
 
 ## 🎯 Key Features
 
+### Core ML
+- AutoML model training (RandomForest, GradientBoosting, LogisticRegression)
+- Classification & regression tasks
+- Risk prediction and decision analytics
+- Multi-domain dataset support (Finance, Healthcare, Sports, General)
 
-- AutoML model training
-- Model registry
-- Bias detection
-- Drift monitoring
+### Governance
+- SQL-based model registry with versioning
 - Model approval workflow
-- REST API
-- LLM explainability
-- Streamlit dashboard
-- End-to-end machine learning pipeline
-- Model training, evaluation, and comparison
-- Precision, Recall, F1-score, ROC curve analysis
-- Confusion matrix visualization
+- Model logging and reproducibility
+- End-to-end ML pipeline management
+
+### Monitoring
+- Real-time drift detection (Wasserstein + KS test)
+- Bias/fairness detection across sensitive features
+- Alerts and metric logging
+
+### Explainability
+- SHAP global & local explanations
+- LLM-based explainers for natural language model interpretations
 - Feature importance & correlation analysis
-- Dataset upload for experimentation
-- Prediction logging and model versioning
-- Explainability via feature attribution
-- Interactive Streamlit dashboard
-- Modular architecture for multi-domain use
+
+### API & Deployment
+- REST API with FastAPI
+- Authentication support
+- Docker-ready for production deployment
+- Streamlit web dashboard
+
+**Folder Overview:**  
+- `automl/` - automated ML training engine  
+- `explainability/` - SHAP and LLM model explanations  
+- `monitoring/` - drift and bias monitoring utilities  
+- `governance/` - model approval workflows and risk assessment  
+- `registry/` - SQL-based production model registry  
+- `dashboard/` - Streamlit front-end UI  
 
 ---
 
-## 🧠 Architecture
+## 🧠 Architecture Overview
 
-Frontend:
-Streamlit dashboard
-
-Backend:
-FastAPI service
-
-Storage:
-SQL model registry
-
-Monitoring:
-Drift detection + bias monitoring
-
-## Run locally
-
-pip install -r requirements.txt
-
-uvicorn api.main:app --reload
-
-streamlit run dashboard/streamlit_app.py
-
----
-
-## 🛠️ Technology Stack
-
-- Python
-- Scikit-learn
-- Pandas / NumPy
-- Matplotlib / Seaborn
-- Streamlit
-- Joblib
-- FastAPI (architecture design)
-- Docker (deployment-ready design)
-- Redis (caching architecture concept)
-
----
-
-## 📊 Model Capabilities
-
-The platform supports:
-
-- Classification tasks
-- Risk prediction
-- Decision analytics
-- Multi-domain datasets
-
-Example performance:
-
-| Domain | Accuracy |
-|--------|----------|
-Financial Risk | 88% |
-Synthetic Classification | 90%+ |
-
----
-
-## 📈 Evaluation Metrics
-
-- Accuracy
-- Precision
-- Recall
-- F1 Score
-- ROC Curve & AUC
-- Confusion Matrix
-
----
-
-## 📊 Visual Analytics
-
-The dashboard includes:
-
-- Confusion Matrix
-- Feature Importance
-- Feature Correlation Heatmap
-- ROC Curves
-- Exploratory Data Analysis
-
----
-
-## 📁 Project Structure
-
-
-
+**Frontend:** Streamlit dashboard  
+**Backend:** FastAPI service  
+**Storage:** SQL model registry  
+**Monitoring:** Drift + bias detection  
+**Deployment:** Docker & Docker Compose 
 JTYYLSPH-V7/
 │
-├── api/
-│   ├── main.py
-│   ├── auth.py
-│   ├── predict.py
-│   ├── models.py
-│   └── schemas.py
-│
-├── automl/
-│   ├── automl_engine.py
-│   └── trainer.py
-│
-├── explainability/
-│   ├── shap_engine.py
-│   └── llm_explainer.py
-│
-├── monitoring/
-│   ├── drift.py
-│   ├── psi.py
-│   └── alerts.py
-│
-├── governance/
-│   ├── workflow.py
-│   ├── approvals.py
-│   └── risk_rating.py
-│
-├── registry/
-│   ├── sql_registry.py
-│   └── migrations.py
-│
-├── dashboard/
-│   └── streamlit_app.py
-│
-├── tests/
-│   ├── test_api.py
-│   └── test_models.py
-│
-├── docker/
-│   ├── Dockerfile
-│   └── docker-compose.yml
-│
-├── scripts/
-│   ├── train_model.py
-│   └── deploy_model.py
-│
-├── models/
-│
+├── api/                  # FastAPI REST API
+├── automl/               # Automated ML engines
+├── explainability/       # SHAP & LLM explainers
+├── monitoring/           # Drift & bias monitoring
+├── governance/           # Approval workflow & risk rating
+├── registry/             # SQL model registry
+├── dashboard/            # Streamlit UI
+├── tests/                # Unit & integration tests
+├── docker/               # Dockerfiles & docker-compose
+├── scripts/              # Training & deployment scripts
+├── models/               # Trained model storage
 ├── requirements.txt
 ├── README.md
 ├── LICENSE
-└── .github/
-    └── workflows/
-        └── ci.yml
-
-
+└── .github/              # GitHub CI/CD workflows
 ---
 
 ## ⚙️ Installation
 
-Clone the repository:
+### Clone repository
 
-
-
+```bash
 git clone https://github.com/hs5738-design/jtyylsph-ml-dashboard.git
-
 cd jtyylsph-ml-dashboard
-
-
-Install dependencies:
-
-
-
+Install dependencies
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+Run locally
+# Start API backend
+uvicorn api.main:app --reload
+
+# Start Streamlit dashboard
+streamlit run dashboard/streamlit_app.py
+Docker (Production-ready)
+docker-compose up --build
+
+🔬 Example Use Cases
+Financial risk prediction and scoring
 
 
-Run the application:
+Healthcare classification & diagnosis prediction
+
+
+Policy compliance & governance analytics
+
+
+Supply chain & operational risk modeling
+
+
+Experimental ML research and teaching
 
 
 
-streamlit run app.py
+📊 Model Capabilities
+Domain
+Accuracy
+F1 Score
+Notes
+Financial Risk
+88%
+0.87
+LogisticRegression baseline
+Synthetic Classification
+90%+
+0.91
+AutoML-selected RandomForest
+Healthcare
+85%
+0.84
+GradientBoosting
+General Multi-domain
+88%+
+0.88
+Ensemble models
 
 
----
+📈 Evaluation Metrics
+Accuracy, Precision, Recall, F1 Score
 
-## 🔬 Example Use Cases
 
-- Financial risk prediction
-- Healthcare classification
-- Policy or governance analytics
-- Supply chain risk modeling
-- Experimental ML research
+Confusion Matrix
 
----
 
-## 📌 Engineering Highlights
+ROC Curve & AUC
 
-- Modular and extensible architecture
-- Explainable ML design principles
-- Production-oriented logging and versioning
-- Multi-domain adaptability
-- Interactive visualization interface
-- Reproducible training pipeline
 
----
+Feature importance & correlation heatmaps
 
-## 👨‍💻 Author
 
+SHAP global and local explanations
+
+
+
+📌 Engineering Highlights
+Modular, extensible architecture
+
+
+Explainable ML & LLM design principles
+
+
+Production-oriented logging & versioning
+
+
+Multi-domain adaptability
+
+
+Interactive visualization dashboard
+
+
+Reproducible end-to-end ML training pipeline
+
+
+SQL-based persistent model registry
+
+
+Model approval workflow for enterprise compliance
+
+
+
+🤝 Contributing
+Contributions are welcome! Please follow the standard GitHub workflow:
+Fork repository
+
+
+Create a feature branch (git checkout -b feature/my-feature)
+
+
+Commit changes (git commit -am 'Add feature')
+
+
+Push branch (git push origin feature/my-feature)
+
+
+Open a Pull Request
+
+
+
+📜 License
+MIT License. See LICENSE file for details.
+
+👨‍💻 Author
 Kaleb Carter Shi
-
 ---
+
+
