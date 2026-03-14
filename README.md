@@ -14,11 +14,6 @@
 Streamlit App:  
 [https://hs5738-design-jtyylsph-ml-dashboard-app-3ahbbg.streamlit.app](https://hs5738-design-jtyylsph-ml-dashboard-app-3ahbbg.streamlit.app/)
 
-**Dashboard Preview:**  
-![Dashboard Screenshot](docs/screenshots/dashboard.png)
-![Feature Importance](docs/screenshots/feature_importance.png)
-![SHAP Explanation](docs/screenshots/shap_explainer.png)
-
 ---
 
 ## 📂 Repository
