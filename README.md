@@ -7,7 +7,7 @@ MIT License
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 
-# Intelligent Classification & Analytics Platform
+# JTYYLSPH — Enterprise AI Governance Platform
 
 An end-to-end machine learning system for predictive classification, explainability, and decision analytics across multiple domains including finance, healthcare, and risk modeling.
 
@@ -31,6 +31,15 @@ https://github.com/hs5738-design/jtyylsph-ml-dashboard
 
 ## 🎯 Key Features
 
+
+- AutoML model training
+- Model registry
+- Bias detection
+- Drift monitoring
+- Model approval workflow
+- REST API
+- LLM explainability
+- Streamlit dashboard
 - End-to-end machine learning pipeline
 - Model training, evaluation, and comparison
 - Precision, Recall, F1-score, ROC curve analysis
@@ -44,21 +53,27 @@ https://github.com/hs5738-design/jtyylsph-ml-dashboard
 
 ---
 
-## 🧠 Architecture Overview
-User Input / Dataset Upload
-↓
-Data Processing & Feature Engineering
-↓
-Machine Learning Models
-↓
-Evaluation & Metrics
-↓
-Explainability Layer
-↓
-Visualization Dashboard (Streamlit)
-↓
-Prediction Logging & Version Control
+## 🧠 Architecture
 
+Frontend:
+Streamlit dashboard
+
+Backend:
+FastAPI service
+
+Storage:
+SQL model registry
+
+Monitoring:
+Drift detection + bias monitoring
+
+## Run locally
+
+pip install -r requirements.txt
+
+uvicorn api.main:app --reload
+
+streamlit run dashboard/streamlit_app.py
 
 ---
 
@@ -121,14 +136,60 @@ The dashboard includes:
 
 
 
-jtyylsph-ml-dashboard/
+JTYYLSPH-V7/
 │
-├── app.py # Streamlit web application
-├── main.py # Training pipeline
-├── jtyylsph_v46_bundle.pkl # Saved model bundle
-├── prediction_logs.jsonl # Prediction logs
+├── api/
+│   ├── main.py
+│   ├── auth.py
+│   ├── predict.py
+│   ├── models.py
+│   └── schemas.py
+│
+├── automl/
+│   ├── automl_engine.py
+│   └── trainer.py
+│
+├── explainability/
+│   ├── shap_engine.py
+│   └── llm_explainer.py
+│
+├── monitoring/
+│   ├── drift.py
+│   ├── psi.py
+│   └── alerts.py
+│
+├── governance/
+│   ├── workflow.py
+│   ├── approvals.py
+│   └── risk_rating.py
+│
+├── registry/
+│   ├── sql_registry.py
+│   └── migrations.py
+│
+├── dashboard/
+│   └── streamlit_app.py
+│
+├── tests/
+│   ├── test_api.py
+│   └── test_models.py
+│
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml
+│
+├── scripts/
+│   ├── train_model.py
+│   └── deploy_model.py
+│
+├── models/
+│
 ├── requirements.txt
-└── README.md
+├── README.md
+├── LICENSE
+└── .github/
+    └── workflows/
+        └── ci.yml
 
 
 ---
