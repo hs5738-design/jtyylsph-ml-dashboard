@@ -10,6 +10,6 @@ pdfplumber
 python-docx
 pillow
 pytesseract
-shap
+shap==0.44.1
 openpyxl
 pyarrow
