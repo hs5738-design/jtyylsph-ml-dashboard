@@ -109,7 +109,9 @@ def register_model(name, model, feature_names, metrics):
     registry.append(record)
     save_registry(registry)
 
-
+@st.cache_resource
+def cached_registry():
+    return load_models_from_registry()
 def load_models_from_registry():
 
     registry = load_registry()
@@ -258,7 +260,7 @@ if "feature_names" not in st.session_state:
 
 if not st.session_state.trained_models:
 
-    loaded = load_models_from_registry()
+    loaded = cached_registry()
 
     for name, artifact in loaded.items():
 
@@ -403,6 +405,7 @@ def ingest_file(uploaded):
         features["image_height"] = height
 
         return features
+    return None
 # =========================================================
 # DATA
 # =========================================================
@@ -417,12 +420,26 @@ jurisdiction = st.sidebar.selectbox(
      "Custom Enterprise Policy"]
 )
 st.sidebar.header("Dataset")
-st.sidebar.header("Database Connection")
 
+uploaded_files = st.sidebar.file_uploader(
+    "Upload Dataset or Documents",
+    accept_multiple_files=True,
+    type=[
+        "csv","xlsx","json","parquet",
+        "pdf","docx","txt","log",
+        "xml","sql",
+        "png","jpg","jpeg"
+    ]
+)
+
+st.sidebar.header("Database Connection")
 db_url = st.sidebar.text_input(
     "SQLAlchemy DB URL",
     placeholder="postgresql://user:pass@host:5432/db"
 )
+@st.cache_data
+def load_db(query, engine):
+    return pd.read_sql(query, engine)
 
 query = st.sidebar.text_area(
     "SQL Query",
@@ -430,7 +447,6 @@ query = st.sidebar.text_area(
 )
 X = None
 y = None
-
 # ===============================
 # DATABASE INGESTION
 # ===============================
@@ -441,10 +457,9 @@ if db_url and query:
 
         engine = sqlalchemy.create_engine(db_url)
 
-        df = pd.read_sql(query, engine)
+        df = load_db(query, engine)
 
         st.success("Database loaded")
-
         st.dataframe(df)
 
         target_col = st.sidebar.selectbox("Target Column", df.columns)
@@ -453,7 +468,6 @@ if db_url and query:
         y = df[target_col]
 
     except Exception as e:
-
         st.error(f"Database error: {e}")
 
 
@@ -490,7 +504,6 @@ elif uploaded_files:
 
             X = df
             y = np.random.randint(0,2,len(df))
-
 
 # ===============================
 # SYNTHETIC DATA
@@ -578,11 +591,10 @@ with tabs[0]:
 
             metrics = {
                 "accuracy": accuracy_score(y_test, preds),
-                "precision": precision_score(y_test, preds, average="weighted"),
-                "recall": recall_score(y_test, preds, average="weighted"),
-                "f1": f1_score(y_test, preds, average="weighted"),
+                "precision": precision_score(y_test, preds, average="weighted", zero_division=0),
+                "recall": recall_score(y_test, preds, average="weighted", zero_division=0),
+                "f1": f1_score(y_test, preds, average="weighted", zero_division=0),
             }
-
             st.session_state.trained_models[name] = model
             st.session_state.leaderboard[name] = metrics
 
@@ -758,6 +770,26 @@ with tabs[5]:
         model = st.session_state.trained_models[model_name]
 
         if hasattr(model, "feature_importances_"):
+
+            importances = model.feature_importances_
+
+            safe_barh(
+                feature_names[:len(importances)],
+                importances,
+                "Feature Importance"
+            )
+        if SHAP_AVAILABLE:
+
+            st.write("### SHAP Explanation")
+
+            explainer = shap.Explainer(model, X_train)
+            shap_values = explainer(X_test[:100])
+
+            fig = plt.figure()
+            shap.plots.beeswarm(shap_values, show=False)
+            st.pyplot(fig)
+
+        elif hasattr(model, "feature_importances_"):
 
             importances = model.feature_importances_
 
