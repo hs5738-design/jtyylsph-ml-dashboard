@@ -123,8 +123,6 @@ Supply chain & operational risk modeling
 
 Experimental ML research and teaching
 
-
-
 📊 Model Capabilities
 Domain
 Accuracy
@@ -163,8 +161,6 @@ Feature importance & correlation heatmaps
 
 SHAP global and local explanations
 
-
-
 📌 Engineering Highlights
 Modular, extensible architecture
 
@@ -189,8 +185,6 @@ SQL-based persistent model registry
 
 Model approval workflow for enterprise compliance
 
-
-
 🤝 Contributing
 Contributions are welcome! Please follow the standard GitHub workflow:
 Fork repository
@@ -206,8 +200,6 @@ Push branch (git push origin feature/my-feature)
 
 
 Open a Pull Request
-
-
 
 📜 License
 MIT License. See LICENSE file for details.
