@@ -287,13 +287,38 @@ if not st.session_state.trained_models:
 
 st.title("🚀 JTYYLSPH — AI Governance Platform")
 
-import pdfplumber
-import docx
-import xml.etree.ElementTree as ET
-from PIL import Image
-import pytesseract
-import sqlalchemy
+# ===============================
+# OPTIONAL LIBRARIES (SAFE LOAD)
+# ===============================
+
 import re
+
+try:
+    import pdfplumber
+except:
+    pdfplumber = None
+
+try:
+    import docx
+except:
+    docx = None
+
+try:
+    from PIL import Image
+except:
+    Image = None
+
+try:
+    import pytesseract
+except:
+    pytesseract = None
+
+try:
+    import sqlalchemy
+except:
+    sqlalchemy = None
+
+import xml.etree.ElementTree as ET
 
 def extract_text_features(text):
 
@@ -391,8 +416,7 @@ def ingest_file(uploaded):
     # --------------------------------
     # Images
     # --------------------------------
-
-    if name.endswith((".png", ".jpg", ".jpeg")):
+    if name.endswith((".png", ".jpg", ".jpeg")) and Image and pytesseract:
         image = Image.open(uploaded)
 
         text = pytesseract.image_to_string(image)
@@ -405,7 +429,7 @@ def ingest_file(uploaded):
         features["image_height"] = height
 
         return features
-    return None
+
 # =========================================================
 # DATA
 # =========================================================
@@ -450,7 +474,7 @@ y = None
 # ===============================
 # DATABASE INGESTION
 # ===============================
-if db_url and query:
+if db_url and query and sqlalchemy:
 
     try:
         engine = sqlalchemy.create_engine(db_url)
@@ -779,7 +803,7 @@ with tabs[5]:
 
             st.write("### SHAP Explanation")
 
-            explainer = shap.Explainer(model, X_train)
+            explainer = shap.Explainer(model, X_train[:200])
             shap_values = explainer(X_test[:100])
 
             fig = plt.figure()
