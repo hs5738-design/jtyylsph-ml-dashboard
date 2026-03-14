@@ -154,35 +154,6 @@ def load_models_from_registry():
     return models
 
 
-def load_models_from_registry():
-
-    registry = load_registry()
-    models = {}
-
-    for rec in registry:
-
-        try:
-
-            path = rec.get("path")
-
-            if not path or not os.path.exists(path):
-                continue
-
-            artifact = joblib.load(path)
-
-            model = artifact.get("model")
-
-            if model is None:
-                continue
-
-            models[rec["name"]] = artifact
-
-        except:
-            continue
-
-    return models
-
-
 @st.cache_resource
 def cached_registry():
     return load_models_from_registry()
@@ -859,23 +830,40 @@ with tabs[5]:
 
             try:
 
+                # Ensure feature alignment
+                expected_features = getattr(model, "feature_names_in_", None)
+
+                if expected_features is not None:
+
+                    missing = [f for f in expected_features if f not in X_test.columns]
+
+                    for m in missing:
+                        X_test[m] = 0
+
+                    X_shap = X_test[expected_features].iloc[:100]
+
+                else:
+                    X_shap = X_test.iloc[:100]
+
+                # Tree models
                 if "Forest" in model_name or "Boost" in model_name:
+
                     explainer = shap.TreeExplainer(model)
-                    shap_values = explainer.shap_values(X_test[:100])
+                    shap_values = explainer.shap_values(X_shap)
 
                     if isinstance(shap_values, list):
                         shap_values = shap_values[0]
 
                 else:
-                    explainer = shap.Explainer(model, X_train[:200])
-                    shap_values = explainer(X_test[:100])
+
+                    explainer = shap.Explainer(model, X_train.iloc[:200])
+                    shap_values = explainer(X_shap)
 
                 fig = plt.figure()
 
                 shap.summary_plot(
                     shap_values,
-                    X_test.iloc[:100],
-                    feature_names=feature_names,
+                    X_shap,
                     show=False
                 )
 
@@ -885,7 +873,7 @@ with tabs[5]:
 
             except Exception as e:
 
-                st.warning("SHAP explanation failed.")
+                st.warning("SHAP explanation failed safely.")
                 st.text(str(e))
         elif hasattr(model, "feature_importances_"):
 
