@@ -233,16 +233,25 @@ models = {"GradientBoosting": JTYYLSPHv7()}
 param_grids = {"GradientBoosting":{"n_estimators":[50,100], "max_depth":[2,3,4]}}
 tabs = st.tabs(["Training","Monitoring","Explainability","Registry","Audit Logs"])
 with tabs[0]:
-    if st.button("Train Models"):
+    if st.button("Train Models", key="train_models_main"):
         st.session_state.leaderboard = {}
         for name, model in models.items():
-            grid = GridSearchCV(GradientBoostingClassifier(), param_grids[name], cv=3)
-            grid.fit(X_train, y_train)
-            model.model = grid.best_estimator_
-            metrics = model.train(X_train, y_train)
+            if name in param_grids:
+                grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=-1)
+                grid.fit(X_train, y_train)
+                model = grid.best_estimator_
+            else:
+                model.fit(X_train, y_train)
+            preds = model.predict(X_test)
+            metrics = {
+                "accuracy": accuracy_score(y_test, preds),
+                "precision": precision_score(y_test, preds, average="weighted", zero_division=0),
+                "recall": recall_score(y_test, preds, average="weighted", zero_division=0),
+                "f1": f1_score(y_test, preds, average="weighted", zero_division=0),
+            }
             st.session_state.trained_models[name] = model
             st.session_state.leaderboard[name] = metrics
-            register_model(name, model.model, feature_names, metrics)
+            register_model(name, model, feature_names, metrics)
         st.session_state.training_done = True
         st.success("Training Complete")
     
@@ -333,28 +342,22 @@ param_grids = {
 # =========================================================
 # TABS
 # =========================================================
-
-tabs = st.tabs(
-    [
-        "Training",
-        "Governance",
-        "Bias",
-        "Stress Testing",
-        "Monitoring",
-        "Explainability",
-        "Registry",
-        "Audit Logs",
-    ]
-)
-
+tabs = st.tabs([
+    "Training",
+    "Governance",
+    "Bias",
+    "Stress Testing",
+    "Monitoring",
+    "Explainability",
+    "Registry",
+    "Audit Logs",
+])
 # =========================================================
 # TRAINING TAB
 # =========================================================
-
 with tabs[0]:
-    if st.button("Train Models"):
+    if st.button("Train Models", key="train_models_main"):
         st.session_state.leaderboard = {}
-
         for name, model in models.items():
             if name in param_grids:
                 grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=-1)
@@ -362,49 +365,38 @@ with tabs[0]:
                 model = grid.best_estimator_
             else:
                 model.fit(X_train, y_train)
-
             preds = model.predict(X_test)
-
             metrics = {
                 "accuracy": accuracy_score(y_test, preds),
                 "precision": precision_score(y_test, preds, average="weighted", zero_division=0),
                 "recall": recall_score(y_test, preds, average="weighted", zero_division=0),
                 "f1": f1_score(y_test, preds, average="weighted", zero_division=0),
             }
-
             st.session_state.trained_models[name] = model
             st.session_state.leaderboard[name] = metrics
             register_model(name, model, feature_names, metrics)
-
         st.session_state.training_done = True
         st.success("Training Complete")
-
     if st.session_state.leaderboard:
         df_lb = pd.DataFrame(st.session_state.leaderboard).T
         df_lb = df_lb.sort_values("accuracy", ascending=False)
         st.dataframe(df_lb)
-
 # =========================================================
 # GOVERNANCE TAB
 # =========================================================
-
 with tabs[1]:
     st.subheader("📑 Model Governance Report")
-
     if not st.session_state.training_done:
         st.info("Train models first to generate governance reports.")
     else:
         model_name = st.selectbox(
             "Select Model",
             list(st.session_state.trained_models.keys()),
-            key="gov_model",
+            key="gov_model"
         )
-
         metrics = st.session_state.leaderboard.get(model_name, {})
-
         st.write("### Model Performance")
         st.json(metrics)
-
         report = {
             "model_name": model_name,
             "generated_at": datetime.datetime.utcnow().isoformat(),
@@ -416,98 +408,77 @@ with tabs[1]:
                 "registry_tracking": "enabled",
             },
         }
-
         st.download_button(
             "Download Governance Report",
             json.dumps(report, indent=2),
             file_name="governance_report.json",
+            key="download_gov_report"
         )
-
-        st.write("### Regulatory Framework")
-        st.info(jurisdiction)
-
-        risk = 1 - metrics.get("accuracy", 0)
-
         st.write("### Model Risk Rating")
-
+        risk = 1 - metrics.get("accuracy", 0)
         if risk < 0.1:
             st.success("Low Model Risk")
         elif risk < 0.25:
             st.warning("Moderate Model Risk")
         else:
             st.error("High Model Risk")
-
 # =========================================================
 # BIAS TAB
 # =========================================================
-
 with tabs[2]:
     if st.session_state.training_done:
         model_name = st.selectbox(
             "Model",
             list(st.session_state.trained_models.keys()),
-            key="bias_model",
+            key="bias_model"
         )
-
-        sensitive = st.selectbox("Sensitive Feature", ["None"] + feature_names)
+        sensitive = st.selectbox(
+            "Sensitive Feature",
+            ["None"] + feature_names,
+            key="sensitive_feature"
+        )
         if sensitive == "None":
             sensitive = None
-
         model = st.session_state.trained_models[model_name]
         results = fairness_analysis(model, X_test, y_test, sensitive)
         st.json(results)
-
 # =========================================================
 # STRESS TEST TAB
 # =========================================================
-
 with tabs[3]:
     if st.session_state.training_done:
         model_name = st.selectbox(
             "Model",
             list(st.session_state.trained_models.keys()),
-            key="stress_model",
+            key="stress_model"
         )
-
         model = st.session_state.trained_models[model_name]
-
-        feature = st.selectbox("Feature", feature_names)
-        shock = st.slider("Shock %", -50, 50, 10) / 100
-
+        feature = st.selectbox("Feature", feature_names, key="stress_feature")
+        shock = st.slider("Shock %", -50, 50, 10, key="shock_slider") / 100
         stressed = X_test.copy()
         stressed[feature] *= (1 + shock)
-
         preds = model.predict(stressed)
         impact = float(np.mean(preds))
-
         st.metric("Default Rate", f"{impact:.4f}")
-
         log_prediction(model_name)
-
 # =========================================================
 # MONITORING TAB
 # =========================================================
-
 with tabs[4]:
-    feature = st.selectbox("Feature", feature_names, key="monitor")
+    feature = st.selectbox("Feature", feature_names, key="monitor_feature")
     ks, p = ks_2samp(X_train[feature], X_test[feature])
     w = wasserstein_distance(X_train[feature], X_test[feature])
-
     st.metric("KS p-value", f"{p:.5f}")
     st.metric("Wasserstein", f"{w:.5f}")
-
     log_drift_metrics(feature, X_train[feature], X_test[feature], w, "monitor")
-
     logs = load_json_lines(PREDICTION_DRIFT_LOG)
     if logs:
-        df = pd.DataFrame(logs)
-        if "drift_score" in df.columns:
-            st.line_chart(df["drift_score"])
-
+        df_logs = pd.DataFrame(logs)
+        if "drift_score" in df_logs.columns:
+            st.line_chart(df_logs["drift_score"])
 # =========================================================
 # EXPLAINABILITY TAB
 # =========================================================
-
 with tabs[5]:
     if not st.session_state.training_done:
         st.info("Train models first to view explainability.")
@@ -515,30 +486,25 @@ with tabs[5]:
         model_name = st.selectbox(
             "Explain Model",
             list(st.session_state.trained_models.keys()),
-            key="exp",
+            key="exp_model"
         )
         model = st.session_state.trained_models[model_name]
         st.write("### Global Feature Importance (Model Native)")
-        
-        # Tree-based models
         if hasattr(model, "feature_importances_"):
             safe_barh(
                 feature_names[:len(model.feature_importances_)],
                 model.feature_importances_,
-                "Feature Importance",
+                "Feature Importance"
             )
-        # Linear models
         elif hasattr(model, "coef_"):
             coefs = np.abs(model.coef_[0])
             safe_barh(
                 feature_names[:len(coefs)],
                 coefs,
-                "Model Coefficients",
+                "Model Coefficients"
             )
         else:
             st.info("Model does not expose native feature importances.")
-        
-        # SHAP explanations (only if available)
         if SHAP_AVAILABLE:
             try:
                 st.write("### SHAP Global Explanation")
@@ -559,7 +525,7 @@ with tabs[5]:
                 st.pyplot(fig)
                 plt.close(fig)
                 st.write("### SHAP Local Explanation (Single Instance)")
-                idx = st.slider("Instance index", 0, len(X_shap) - 1, 0)
+                idx = st.slider("Instance index", 0, len(X_shap) - 1, 0, key="shap_instance_slider")
                 fig2 = plt.figure()
                 shap.waterfall_plot(shap_values[idx], show=False)
                 st.pyplot(fig2)
@@ -568,25 +534,21 @@ with tabs[5]:
                 st.warning("SHAP explanation skipped safely due to incompatibility.")
                 st.text(str(e))
         else:
-            st.info("SHAP not available (Python 3.13 incompatible); showing native feature importances only.")
+            st.info("SHAP is not installed or incompatible; showing native feature importances only.")
 # =========================================================
 # REGISTRY TAB
 # =========================================================
-
 with tabs[6]:
     reg = load_registry()
     if reg:
         for r in reg:
             r["hash"] = model_hash(r["path"])
-
         df_reg = pd.DataFrame(reg)
         df_reg = df_reg.sort_values(["name", "version"])
         st.dataframe(df_reg)
-
 # =========================================================
 # AUDIT LOGS TAB
 # =========================================================
-
 with tabs[7]:
     logs = load_json_lines(LOG_FILE)
     if logs:
