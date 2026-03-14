@@ -1,4 +1,4 @@
-# JTYYLSPH V7 — Enterprise AI Governance Platform
+# JTYYLSPH — Enterprise AI Governance Platform
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue)
 ![ML](https://img.shields.io/badge/Machine%20Learning-Scikit--Learn-orange)
@@ -70,7 +70,7 @@ GitHub:
 **Storage:** SQL model registry  
 **Monitoring:** Drift + bias detection  
 **Deployment:** Docker & Docker Compose 
-JTYYLSPH-V7/
+JTYYLSPH/
 │
 ├── api/                  # FastAPI REST API
 ├── automl/               # Automated ML engines
