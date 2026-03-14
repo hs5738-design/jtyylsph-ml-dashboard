@@ -450,11 +450,9 @@ y = None
 # ===============================
 # DATABASE INGESTION
 # ===============================
-
 if db_url and query:
 
     try:
-
         engine = sqlalchemy.create_engine(db_url)
 
         df = load_db(query, engine)
@@ -469,7 +467,6 @@ if db_url and query:
 
     except Exception as e:
         st.error(f"Database error: {e}")
-
 
 # ===============================
 # FILE INGESTION
