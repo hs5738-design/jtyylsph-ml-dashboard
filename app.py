@@ -474,18 +474,16 @@ with tabs[5]:
             list(st.session_state.trained_models.keys()),
             key="exp",
         )
-
         model = st.session_state.trained_models[model_name]
-
-        st.write("### Global Importance (Model Native)")
-
+        st.write("### Global Feature Importance (Model Native)")
+        # Tree-based models
         if hasattr(model, "feature_importances_"):
             safe_barh(
                 feature_names[:len(model.feature_importances_)],
                 model.feature_importances_,
                 "Feature Importance",
             )
-
+        # Linear models
         elif hasattr(model, "coef_"):
             coefs = np.abs(model.coef_[0])
             safe_barh(
@@ -494,56 +492,39 @@ with tabs[5]:
                 "Model Coefficients",
             )
         else:
-            st.info("Model does not expose feature importances.")
-
-        # SHAP
+            st.info("Model does not expose native feature importances.")
+        # SHAP explanations (only if library is available)
         if SHAP_AVAILABLE:
-            st.write("### SHAP Global Explanation")
-
             try:
-                X_base = X_test.copy()
-                X_base = X_base.select_dtypes(include=[np.number])
-
-                expected = getattr(model, "feature_names_in_", None)
-
-                if expected is not None:
-                    X_fixed = X_base.copy()
-                    for col in expected:
-                        if col not in X_fixed.columns:
-                            X_fixed[col] = 0
-                    X_shap = X_fixed[list(expected)].iloc[:100]
+                st.write("### SHAP Global Explanation")
+                
+                X_base = X_test.select_dtypes(include=[np.number]).copy()
+                if hasattr(model, "feature_names_in_"):
+                    expected_cols = model.feature_names_in_
+                    for col in expected_cols:
+                        if col not in X_base.columns:
+                            X_base[col] = 0
+                    X_shap = X_base[list(expected_cols)].iloc[:100]
                 else:
                     X_shap = X_base.iloc[:100]
-
                 X_shap = X_shap.replace([np.inf, -np.inf], np.nan).fillna(0)
-
-                explainer = shap.Explainer(
-                    model, X_train.select_dtypes(include=[np.number])
-                )
+                explainer = shap.Explainer(model, X_train.select_dtypes(include=[np.number]))
                 shap_values = explainer(X_shap)
-
                 fig = plt.figure()
                 shap.summary_plot(shap_values, X_shap, show=False)
                 st.pyplot(fig)
                 plt.close(fig)
-
                 st.write("### SHAP Local Explanation (Single Instance)")
-                idx = st.slider(
-                    "Instance index", 0, len(X_shap) - 1, 0
-                )
-
+                idx = st.slider("Instance index", 0, len(X_shap) - 1, 0)
                 fig2 = plt.figure()
                 shap.waterfall_plot(shap_values[idx], show=False)
                 st.pyplot(fig2)
                 plt.close(fig2)
-
             except Exception as e:
-                st.warning("SHAP explanation failed safely.")
+                st.warning("SHAP explanation skipped safely due to incompatibility.")
                 st.text(str(e))
-
         else:
-            st.info("SHAP is not installed; native explainability only.")
-
+            st.info("SHAP is not installed or incompatible; showing native feature importances only.")
 # =========================================================
 # REGISTRY TAB
 # =========================================================
