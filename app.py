@@ -1,6 +1,5 @@
-
 # =========================================================
-# JTYYLSPH V6.2 PRO MAX — ENTERPRISE AI PLATFORM
+# JTYYLSPH V6.3 PRO MAX — ENTERPRISE AI PLATFORM
 # Production • Persistent Models • Registry • Explainability
 # =========================================================
 import streamlit as st
@@ -792,3 +791,5 @@ with tabs[7]:
     logs = load_json_lines(LOG_FILE)
     if logs:
         st.dataframe(pd.DataFrame(logs))
+
+
