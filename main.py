@@ -15,11 +15,18 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import train_test_split
+from fastapi import FastAPI
+from api.predict import router as predict_router
+from api.auth import router as auth_router
 
+app = FastAPI(title="JTYYLSPH V7 API")
+
+app.include_router(auth_router, prefix="/auth")
+app.include_router(predict_router, prefix="/predict")
 # -------------------------------
 # 1. Core Model
 # -------------------------------
-class JTYYLSPHv44:
+class JTYYLSPHv7:
     def __init__(self, n_estimators=50, max_depth=3):
         self.model = GradientBoostingClassifier(
             n_estimators=n_estimators,
@@ -47,7 +54,7 @@ class JTYYLSPHv44:
                 "recall": recall,
                 "f1": f1
             },
-            "version": "v4.6"
+            "version": "v7"
         }
 
         joblib.dump(bundle, "jtyylsph_v46_bundle.pkl")
