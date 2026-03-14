@@ -2,7 +2,7 @@
 # JTYYLSPH V6.2 PRO MAX — ENTERPRISE AI PLATFORM
 # Production • Persistent Models • Registry • Explainability
 # =========================================================
-
+st.write("App starting...")
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -354,8 +354,10 @@ def ingest_file(uploaded):
         return pd.read_json(uploaded)
 
     if name.endswith(".parquet"):
-        return pd.read_parquet(uploaded)
-
+        try:
+            return pd.read_parquet(uploaded)
+        except:
+            return None
     # --------------------------------
     # SQL Dump
     # --------------------------------
@@ -380,7 +382,7 @@ def ingest_file(uploaded):
     # PDF
     # --------------------------------
 
-    if name.endswith(".pdf"):
+    if name.endswith(".pdf") and pdfplumber:
 
         text = ""
 
@@ -396,7 +398,7 @@ def ingest_file(uploaded):
     # Word
     # --------------------------------
 
-    if name.endswith(".docx"):
+    if name.endswith(".docx") and docx:
 
         doc = docx.Document(uploaded)
 
@@ -429,7 +431,7 @@ def ingest_file(uploaded):
         features["image_height"] = height
 
         return features
-
+    return None
 # =========================================================
 # DATA
 # =========================================================
@@ -509,7 +511,7 @@ elif uploaded_files:
 
     if dataframes:
 
-        df = pd.concat(dataframes, ignore_index=True)
+        df = pd.concat(dataframes, ignore_index=True, sort=False)
 
         st.write("Combined Dataset")
         st.dataframe(df)
@@ -540,6 +542,10 @@ else:
 
     X = pd.DataFrame(X_data)
     y = pd.Series(y_data)
+if X is None:
+    st.error("No valid dataset could be loaded.")
+    st.stop()
+
 X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
 st.session_state.feature_names = feature_names
@@ -859,3 +865,12 @@ with tabs[7]:
 
     if logs:
         st.dataframe(pd.DataFrame(logs))
+
+import traceback
+
+try:
+    pass
+except Exception as e:
+    st.error("Application error")
+    st.text(str(e))
+    st.text(traceback.format_exc())
