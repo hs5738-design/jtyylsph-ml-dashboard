@@ -829,52 +829,34 @@ with tabs[5]:
             st.write("### SHAP Explanation")
 
             try:
-
                 # Ensure feature alignment
                 expected_features = getattr(model, "feature_names_in_", None)
 
                 if expected_features is not None:
-
                     missing = [f for f in expected_features if f not in X_test.columns]
-
                     for m in missing:
                         X_test[m] = 0
-
                     X_shap = X_test[expected_features].iloc[:100]
-
                 else:
                     X_shap = X_test.iloc[:100]
 
-                # Tree models
-                if "Forest" in model_name or "Boost" in model_name:
+                # ---- UNIVERSAL SHAP FIX ----
+                # Always use shap.Explainer (auto-selects correct algorithm)
+                explainer = shap.Explainer(model, X_train)
 
-                    explainer = shap.TreeExplainer(model)
-                    shap_values = explainer.shap_values(X_shap)
+                # This ALWAYS returns a shap.Explanation object
+                shap_values = explainer(X_shap)
 
-                    if isinstance(shap_values, list):
-                        shap_values = shap_values[0]
-
-                else:
-
-                    explainer = shap.Explainer(model, X_train.iloc[:200])
-                    shap_values = explainer(X_shap)
-
+                # Plot safely
                 fig = plt.figure()
-
-                shap.summary_plot(
-                    shap_values,
-                    X_shap,
-                    show=False
-                )
-
+                shap.summary_plot(shap_values, X_shap, show=False)
                 st.pyplot(fig)
-
                 plt.close(fig)
 
             except Exception as e:
-
                 st.warning("SHAP explanation failed safely.")
                 st.text(str(e))
+
         elif hasattr(model, "feature_importances_"):
 
             importances = model.feature_importances_
@@ -924,4 +906,3 @@ with tabs[7]:
 
     if logs:
         st.dataframe(pd.DataFrame(logs))
-
