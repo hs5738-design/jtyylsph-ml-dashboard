@@ -154,22 +154,24 @@ def load_models_from_registry():
     return models
 
 
-@st.cache_resource
-def cached_registry():
-    return load_models_from_registry()
+def load_models_from_registry():
 
     registry = load_registry()
     models = {}
 
     for rec in registry:
+
         try:
+
             path = rec.get("path")
+
             if not path or not os.path.exists(path):
                 continue
 
             artifact = joblib.load(path)
 
             model = artifact.get("model")
+
             if model is None:
                 continue
 
@@ -180,6 +182,10 @@ def cached_registry():
 
     return models
 
+
+@st.cache_resource
+def cached_registry():
+    return load_models_from_registry()
 
 # =========================================================
 # HELPERS
@@ -651,7 +657,7 @@ with tabs[0]:
 
             if name in param_grids:
 
-                grid = GridSearchCV(model, param_grids[name], cv=3)
+                grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=-1)
                 grid.fit(X_train, y_train)
                 model = grid.best_estimator_
 
@@ -795,8 +801,6 @@ with tabs[3]:
 
         st.metric("Default Rate", f"{impact:.4f}")
 
-        preds = model.predict(stressed)
-
         log_prediction(model_name)
 
 # =========================================================
@@ -859,7 +863,6 @@ with tabs[5]:
                     explainer = shap.TreeExplainer(model)
                     shap_values = explainer.shap_values(X_test[:100])
 
-                    # SHAP returns list for classification
                     if isinstance(shap_values, list):
                         shap_values = shap_values[0]
 
@@ -869,7 +872,12 @@ with tabs[5]:
 
                 fig = plt.figure()
 
-                shap.summary_plot(shap_values, X_test[:100], show=False)
+                shap.summary_plot(
+                    shap_values,
+                    X_test.iloc[:100],
+                    feature_names=feature_names,
+                    show=False
+                )
 
                 st.pyplot(fig)
 
@@ -928,3 +936,4 @@ with tabs[7]:
 
     if logs:
         st.dataframe(pd.DataFrame(logs))
+
