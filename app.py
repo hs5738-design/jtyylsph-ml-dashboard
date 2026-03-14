@@ -858,18 +858,23 @@ with tabs[5]:
                 if "Forest" in model_name or "Boost" in model_name:
                     explainer = shap.TreeExplainer(model)
                     shap_values = explainer.shap_values(X_test[:100])
-                    shap.summary_plot(shap_values, X_test[:100], show=False)
+
+                    # SHAP returns list for classification
+                    if isinstance(shap_values, list):
+                        shap_values = shap_values[0]
+
                 else:
                     explainer = shap.Explainer(model, X_train[:200])
                     shap_values = explainer(X_test[:100])
 
-                    fig = plt.figure()
+                fig = plt.figure()
 
-                    shap.summary_plot(shap_values, X_test[:100], show=False)
+                shap.summary_plot(shap_values, X_test[:100], show=False)
 
-                    st.pyplot(fig)
+                st.pyplot(fig)
 
-                    plt.close(fig)
+                plt.close(fig)
+
             except Exception as e:
 
                 st.warning("SHAP explanation failed.")
@@ -923,4 +928,3 @@ with tabs[7]:
 
     if logs:
         st.dataframe(pd.DataFrame(logs))
-
