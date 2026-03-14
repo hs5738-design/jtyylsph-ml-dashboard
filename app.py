@@ -1,3 +1,4 @@
+
 # =========================================================
 # JTYYLSPH V6.2 PRO MAX — ENTERPRISE AI PLATFORM
 # Production • Persistent Models • Registry • Explainability
@@ -370,11 +371,14 @@ jurisdiction = st.sidebar.selectbox(
 )
 
 st.sidebar.header("Dataset")
-uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+st.sidebar.header("Dataset Controls")
 
 domain = st.sidebar.selectbox(
-    "Synthetic Dataset", ["Finance", "Healthcare", "Sports", "business", "emotion", "General"]
+    "Synthetic Dataset",
+    ["Finance", "Healthcare", "Sports", "business", "emotion", "General"]
 )
+
+uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded:
     df = pd.read_csv(uploaded)
@@ -424,8 +428,8 @@ query = st.sidebar.text_area(
     "SQL Query", placeholder="SELECT * FROM table LIMIT 1000"
 )
 
-X = None
-y = None
+X = X if 'X' in locals() else None
+y = y if 'y' in locals() else None
 
 # DATABASE INGESTION
 if db_url and query and sqlalchemy:
@@ -788,5 +792,3 @@ with tabs[7]:
     logs = load_json_lines(LOG_FILE)
     if logs:
         st.dataframe(pd.DataFrame(logs))
-
-
