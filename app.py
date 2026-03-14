@@ -20,12 +20,28 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from scipy.stats import wasserstein_distance, ks_2samp
 
+
 # Optional SHAP
 try:
     import shap
     SHAP_AVAILABLE = True
 except:
     SHAP_AVAILABLE = False
+
+import sys
+import traceback
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+
+    st.error("Application Error")
+
+    error_text = "".join(
+        traceback.format_exception(exc_type, exc_value, exc_traceback)
+    )
+
+    st.text(error_text)
+
+sys.excepthook = handle_exception
 
 # =========================================================
 # CONFIG
@@ -109,10 +125,38 @@ def register_model(name, model, feature_names, metrics):
     registry.append(record)
     save_registry(registry)
 
+def load_models_from_registry():
+
+    registry = load_registry()
+    models = {}
+
+    for rec in registry:
+
+        try:
+
+            path = rec.get("path")
+
+            if not path or not os.path.exists(path):
+                continue
+
+            artifact = joblib.load(path)
+
+            model = artifact.get("model")
+
+            if model is None:
+                continue
+
+            models[rec["name"]] = artifact
+
+        except:
+            continue
+
+    return models
+
+
 @st.cache_resource
 def cached_registry():
     return load_models_from_registry()
-def load_models_from_registry():
 
     registry = load_registry()
     models = {}
@@ -568,7 +612,7 @@ st.write(X.duplicated().sum())
 models = {
     "RandomForest": RandomForestClassifier(),
     "GradientBoosting": GradientBoostingClassifier(),
-    "LogisticRegression": LogisticRegression(max_iter=1000),
+    "LogisticRegression": LogisticRegression(max_iter=1000, solver="liblinear"),
 }
 
 param_grids = {
@@ -809,13 +853,27 @@ with tabs[5]:
 
             st.write("### SHAP Explanation")
 
-            explainer = shap.Explainer(model, X_train[:200])
-            shap_values = explainer(X_test[:100])
+            try:
 
-            fig = plt.figure()
-            shap.plots.beeswarm(shap_values, show=False)
-            st.pyplot(fig)
+                if "Forest" in model_name or "Boost" in model_name:
+                    explainer = shap.TreeExplainer(model)
+                    shap_values = explainer.shap_values(X_test[:100])
+                    shap.summary_plot(shap_values, X_test[:100], show=False)
+                else:
+                    explainer = shap.Explainer(model, X_train[:200])
+                    shap_values = explainer(X_test[:100])
 
+                    fig = plt.figure()
+
+                    shap.summary_plot(shap_values, X_test[:100], show=False)
+
+                    st.pyplot(fig)
+
+                    plt.close(fig)
+            except Exception as e:
+
+                st.warning("SHAP explanation failed.")
+                st.text(str(e))
         elif hasattr(model, "feature_importances_"):
 
             importances = model.feature_importances_
@@ -866,11 +924,3 @@ with tabs[7]:
     if logs:
         st.dataframe(pd.DataFrame(logs))
 
-import traceback
-
-try:
-    pass
-except Exception as e:
-    st.error("Application error")
-    st.text(str(e))
-    st.text(traceback.format_exc())
