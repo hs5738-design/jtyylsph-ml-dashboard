@@ -284,6 +284,125 @@ if not st.session_state.trained_models:
 # =========================================================
 
 st.title("🚀 JTYYLSPH — AI Governance Platform")
+
+import pdfplumber
+import docx
+import xml.etree.ElementTree as ET
+from PIL import Image
+import pytesseract
+import sqlalchemy
+import re
+
+def extract_text_features(text):
+
+    words = text.split()
+
+    features = {
+        "char_count": len(text),
+        "word_count": len(words),
+        "avg_word_length": np.mean([len(w) for w in words]) if words else 0,
+        "numeric_count": len(re.findall(r"\d+", text)),
+        "uppercase_ratio": sum(c.isupper() for c in text) / max(len(text),1),
+        "digit_ratio": sum(c.isdigit() for c in text) / max(len(text),1),
+        "sentence_count": len(re.split(r"[.!?]", text))
+    }
+
+    return pd.DataFrame([features])
+
+def ingest_file(uploaded):
+
+    name = uploaded.name.lower()
+
+    # --------------------------------
+    # Structured Data
+    # --------------------------------
+
+    if name.endswith(".csv"):
+        return pd.read_csv(uploaded)
+
+    if name.endswith(".xlsx"):
+        return pd.read_excel(uploaded)
+
+    if name.endswith(".json"):
+        return pd.read_json(uploaded)
+
+    if name.endswith(".parquet"):
+        return pd.read_parquet(uploaded)
+
+    # --------------------------------
+    # SQL Dump
+    # --------------------------------
+
+    if name.endswith(".sql"):
+        text = uploaded.read().decode()
+        return extract_text_features(text)
+
+    # --------------------------------
+    # XML
+    # --------------------------------
+
+    if name.endswith(".xml"):
+
+        tree = ET.parse(uploaded)
+        root = tree.getroot()
+
+        text = " ".join([elem.text or "" for elem in root.iter()])
+        return extract_text_features(text)
+
+    # --------------------------------
+    # PDF
+    # --------------------------------
+
+    if name.endswith(".pdf"):
+
+        text = ""
+
+        with pdfplumber.open(uploaded) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    text += t
+
+        return extract_text_features(text)
+
+    # --------------------------------
+    # Word
+    # --------------------------------
+
+    if name.endswith(".docx"):
+
+        doc = docx.Document(uploaded)
+
+        text = " ".join([p.text for p in doc.paragraphs])
+
+        return extract_text_features(text)
+
+    # --------------------------------
+    # Logs / TXT
+    # --------------------------------
+
+    if name.endswith(".txt") or name.endswith(".log"):
+
+        text = uploaded.read().decode()
+
+        return extract_text_features(text)
+    # --------------------------------
+    # Images
+    # --------------------------------
+
+    if name.endswith((".png", ".jpg", ".jpeg")):
+        image = Image.open(uploaded)
+
+        text = pytesseract.image_to_string(image)
+
+        width, height = image.size
+
+        features = extract_text_features(text)
+
+        features["image_width"] = width
+        features["image_height"] = height
+
+        return features
 # =========================================================
 # DATA
 # =========================================================
@@ -298,26 +417,110 @@ jurisdiction = st.sidebar.selectbox(
      "Custom Enterprise Policy"]
 )
 st.sidebar.header("Dataset")
-uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-domain = st.sidebar.selectbox("Synthetic Dataset", ["Finance", "Healthcare", "Sports", "General"])
+st.sidebar.header("Database Connection")
 
-if uploaded:
-    df = pd.read_csv(uploaded)
-    target_col = st.sidebar.selectbox("Target Column", df.columns)
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
+db_url = st.sidebar.text_input(
+    "SQLAlchemy DB URL",
+    placeholder="postgresql://user:pass@host:5432/db"
+)
+
+query = st.sidebar.text_area(
+    "SQL Query",
+    placeholder="SELECT * FROM table LIMIT 1000"
+)
+X = None
+y = None
+
+# ===============================
+# DATABASE INGESTION
+# ===============================
+
+if db_url and query:
+
+    try:
+
+        engine = sqlalchemy.create_engine(db_url)
+
+        df = pd.read_sql(query, engine)
+
+        st.success("Database loaded")
+
+        st.dataframe(df)
+
+        target_col = st.sidebar.selectbox("Target Column", df.columns)
+
+        X = df.drop(columns=[target_col])
+        y = df[target_col]
+
+    except Exception as e:
+
+        st.error(f"Database error: {e}")
+
+
+# ===============================
+# FILE INGESTION
+# ===============================
+
+elif uploaded_files:
+
+    dataframes = []
+
+    for file in uploaded_files:
+
+        df = ingest_file(file)
+
+        if df is not None:
+            dataframes.append(df)
+
+    if dataframes:
+
+        df = pd.concat(dataframes, ignore_index=True)
+
+        st.write("Combined Dataset")
+        st.dataframe(df)
+
+        if len(df.columns) > 1:
+
+            target_col = st.sidebar.selectbox("Target Column", df.columns)
+
+            X = df.drop(columns=[target_col])
+            y = df[target_col]
+
+        else:
+
+            X = df
+            y = np.random.randint(0,2,len(df))
+
+
+# ===============================
+# SYNTHETIC DATA
+# ===============================
+
 else:
-    X_data, y_data = make_classification(n_samples=500, n_features=6, random_state=42)
+
+    X_data, y_data = make_classification(
+        n_samples=500,
+        n_features=6,
+        random_state=42
+    )
+
     X = pd.DataFrame(X_data)
     y = pd.Series(y_data)
-
 X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
 st.session_state.feature_names = feature_names
 st.write("Dataset Shape:", X.shape)
+st.write("### Dataset Summary")
+st.write(X.describe())
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+st.write("### Data Quality Check")
 
+st.write("Missing Values")
+st.write(X.isna().sum())
+
+st.write("Duplicate Rows")
+st.write(X.duplicated().sum())
 # =========================================================
 # MODELS
 # =========================================================
@@ -395,7 +598,6 @@ with tabs[0]:
 
         st.dataframe(df_lb)
 
-
 # =========================================================
 # GOVERNANCE REPORT
 # =========================================================
@@ -433,26 +635,26 @@ with tabs[1]:
         }
 
         report_str = json.dumps(report, indent=2)
-st.download_button(
-    "Download Governance Report",
-    report_str,
-    file_name="governance_report.json"
-)
 
-st.write("### Regulatory Framework")
-st.info(jurisdiction)
+        st.download_button(
+            "Download Governance Report",
+            report_str,
+            file_name="governance_report.json"
+        )
 
-risk_score = 1 - metrics.get("accuracy", 0)
+        st.write("### Regulatory Framework")
+        st.info(jurisdiction)
 
-st.write("### Model Risk Rating")
+        risk_score = 1 - metrics.get("accuracy", 0)
 
-if risk_score < 0.1:
-    st.success("Low Model Risk")
-elif risk_score < 0.25:
-    st.warning("Moderate Model Risk")
-else:
-    st.error("High Model Risk")
-        
+        st.write("### Model Risk Rating")
+
+        if risk_score < 0.1:
+            st.success("Low Model Risk")
+        elif risk_score < 0.25:
+            st.warning("Moderate Model Risk")
+        else:
+            st.error("High Model Risk")
 # =========================================================
 # BIAS
 # =========================================================
