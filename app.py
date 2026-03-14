@@ -469,6 +469,23 @@ jurisdiction = st.sidebar.selectbox(
 st.sidebar.header("Dataset")
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 domain = st.sidebar.selectbox("Synthetic Dataset", ["Finance", "Healthcare", "Sports", "business", "emotion", "General"])
+if uploaded:
+    df = pd.read_csv(uploaded)
+    target_col = st.sidebar.selectbox("Target Column", df.columns)
+    X = df.drop(columns=[target_col])
+    y = df[target_col]
+else:
+    X_data, y_data = make_classification(n_samples=500, n_features=6, random_state=42)
+    X = pd.DataFrame(X_data)
+    y = pd.Series(y_data)
+
+X.columns = [str(c) for c in X.columns]
+feature_names = list(X.columns)
+st.session_state.feature_names = feature_names
+st.write("Dataset Shape:", X.shape)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
 
 uploaded_files = st.sidebar.file_uploader(
     "Upload Dataset or Documents",
@@ -926,4 +943,3 @@ with tabs[7]:
 
     if logs:
         st.dataframe(pd.DataFrame(logs))
-
