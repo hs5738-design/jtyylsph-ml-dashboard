@@ -10,7 +10,6 @@ import datetime
 import json
 import os
 import joblib
-import hashlib
 import sys
 import traceback
 from sklearn.datasets import make_classification
@@ -23,12 +22,8 @@ from scipy.stats import wasserstein_distance, ks_2samp
 try:
     import shap
     SHAP_AVAILABLE = True
-except:
+except ImportError:
     SHAP_AVAILABLE = False
-try:
-    import sqlalchemy
-except:
-    sqlalchemy = None
 # =========================================================
 # ERROR HANDLER
 # =========================================================
@@ -37,74 +32,14 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     st.text("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 sys.excepthook = handle_exception
 # =========================================================
-# HELPER FUNCTIONS
+# DATABASE VARIABLES (FIX)
 # =========================================================
-def load_json_lines(file_path):
-    if not os.path.exists(file_path):
-        return []
-    lines = []
-    with open(file_path, "r") as f:
-        for line in f:
-            try:
-                lines.append(json.loads(line))
-            except:
-                continue
-    return lines
-def ingest_file(file):
-    try:
-        name = file.name.lower()
-        if name.endswith(".csv"):
-            return pd.read_csv(file)
-        elif name.endswith(".xlsx"):
-            return pd.read_excel(file)
-        elif name.endswith(".json"):
-            return pd.read_json(file)
-        elif name.endswith(".parquet"):
-            return pd.read_parquet(file)
-        elif name.endswith(".txt") or name.endswith(".log"):
-            return pd.DataFrame({"text":[line.strip() for line in file.readlines()]})
-        elif name.endswith(".xml"):
-            import xml.etree.ElementTree as ET
-            tree = ET.parse(file)
-            root = tree.getroot()
-            data = [{child.tag: child.text for child in elem} for elem in root]
-            return pd.DataFrame(data)
-        else:
-            return None
-    except Exception as e:
-        st.warning(f"Failed to ingest {file.name}: {e}")
-        return None
-def model_hash(path):
-    if not os.path.exists(path):
-        return None
-    hasher = hashlib.sha256()
-    with open(path, "rb") as f:
-        buf = f.read()
-        hasher.update(buf)
-    return hasher.hexdigest()
-def fairness_analysis(model, X_test, y_test, sensitive_feature=None):
-    results = {}
-    preds = model.predict(X_test)
-    overall_acc = accuracy_score(y_test, preds)
-    results["overall_accuracy"] = overall_acc
-    if sensitive_feature and sensitive_feature in X_test.columns:
-        results["by_group"] = {}
-        groups = X_test[sensitive_feature].unique()
-        for g in groups:
-            mask = X_test[sensitive_feature] == g
-            group_acc = accuracy_score(y_test[mask], preds[mask])
-            results["by_group"][str(g)] = group_acc
-    else:
-        results["by_group"] = "No sensitive feature selected"
-    return results
-def load_db(query, engine):
-    try:
-        df = pd.read_sql(query, engine)
-        return df
-    except Exception as e:
-        st.error(f"DB Query Failed: {e}")
-        return pd.DataFrame()
-jurisdiction = "US Federal AI Guidelines"
+db_url = None
+query = None
+try:
+    import sqlalchemy
+except ImportError:
+    sqlalchemy = None
 # =========================================================
 # MODEL REGISTRY & LOGGING
 # =========================================================
@@ -113,6 +48,15 @@ MODEL_REGISTRY = "model_registry.json"
 PREDICTION_DRIFT_LOG = "drift_logs.jsonl"
 LOG_FILE = "prediction_logs.jsonl"
 os.makedirs(MODEL_DIR, exist_ok=True)
+def load_registry():
+    if os.path.exists(MODEL_REGISTRY):
+        try:
+            data = json.load(open(MODEL_REGISTRY))
+            if isinstance(data, list):
+                return data
+        except:
+            return []
+    return []
 def register_model(name, model, feature_names, metrics):
     registry = load_registry()
     versions = [int(r.get("version",0)) for r in registry if r.get("name")==name]
@@ -125,15 +69,6 @@ def register_model(name, model, feature_names, metrics):
     })
     with open(MODEL_REGISTRY, "w") as f:
         json.dump(registry, f, indent=2)
-def load_registry():
-    if os.path.exists(MODEL_REGISTRY):
-        try:
-            data = json.load(open(MODEL_REGISTRY))
-            if isinstance(data, list):
-                return data
-        except:
-            return []
-    return []
 def load_models_from_registry():
     registry = load_registry()
     models = {}
@@ -155,7 +90,7 @@ def safe_barh(names, values, title):
     ax.barh(names, values)
     ax.set_title(title)
     st.pyplot(fig)
-def log_drift_metrics(feature, X_train_feat, X_test_feat, drift_score, metric):
+def log_drift_metrics(feature, train_col, test_col, drift_score, metric):
     entry = {"time":datetime.datetime.utcnow().isoformat(),
              "feature":feature,"metric":metric,"drift_score":float(drift_score)}
     try:
@@ -168,17 +103,25 @@ def log_prediction(model_name):
         with open(LOG_FILE,"a") as f:
             f.write(json.dumps(entry)+"\n")
     except: pass
+def load_json_lines(path):
+    if os.path.exists(path):
+        lines = []
+        with open(path) as f:
+            for line in f:
+                lines.append(json.loads(line))
+        return lines
+    return []
 # =========================================================
 # JTYYLSPHv7 CORE MODEL
 # =========================================================
 class JTYYLSPHv7:
     def __init__(self, n_estimators=50, max_depth=3):
-        from sklearn.preprocessing import StandardScaler
         self.model = GradientBoostingClassifier(n_estimators=n_estimators, max_depth=max_depth)
         self.scaler = None
         self.feature_names = []
         self.trained = False
         self.version = "v7"
+    
     def train(self, X: pd.DataFrame, y: pd.Series):
         from sklearn.preprocessing import StandardScaler
         self.feature_names = list(X.columns)
@@ -195,6 +138,7 @@ class JTYYLSPHv7:
                      "feature_names":self.feature_names, "metrics":{"accuracy":acc,"precision":prec,"recall":rec,"f1":f1},
                      "version":self.version}, f"jtyylsph_{self.version}_bundle.pkl")
         return {"accuracy":acc,"precision":prec,"recall":rec,"f1":f1}
+    
     def predict(self, X: pd.DataFrame):
         X_scaled = self.scaler.transform(X[self.feature_names])
         preds = self.model.predict(X_scaled)
