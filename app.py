@@ -18,12 +18,15 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from scipy.stats import wasserstein_distance, ks_2samp
-# Optional libraries
-try:
-    import shap
-    SHAP_AVAILABLE = True
-except ImportError:
-    SHAP_AVAILABLE = False
+# Optional libraries (SHAP safe for Python <3.13 only)
+SHAP_AVAILABLE = False
+if sys.version_info < (3, 13):
+    try:
+        import shap
+        SHAP_AVAILABLE = True
+    except ImportError:
+        SHAP_AVAILABLE = False
+st.write(f"SHAP Available: {SHAP_AVAILABLE}")
 # =========================================================
 # ERROR HANDLER
 # =========================================================
@@ -476,6 +479,7 @@ with tabs[5]:
         )
         model = st.session_state.trained_models[model_name]
         st.write("### Global Feature Importance (Model Native)")
+        
         # Tree-based models
         if hasattr(model, "feature_importances_"):
             safe_barh(
@@ -493,11 +497,11 @@ with tabs[5]:
             )
         else:
             st.info("Model does not expose native feature importances.")
-        # SHAP explanations (only if library is available)
+        
+        # SHAP explanations (only if available)
         if SHAP_AVAILABLE:
             try:
                 st.write("### SHAP Global Explanation")
-                
                 X_base = X_test.select_dtypes(include=[np.number]).copy()
                 if hasattr(model, "feature_names_in_"):
                     expected_cols = model.feature_names_in_
@@ -524,7 +528,7 @@ with tabs[5]:
                 st.warning("SHAP explanation skipped safely due to incompatibility.")
                 st.text(str(e))
         else:
-            st.info("SHAP is not installed or incompatible; showing native feature importances only.")
+            st.info("SHAP not available (Python 3.13 incompatible); showing native feature importances only.")
 # =========================================================
 # REGISTRY TAB
 # =========================================================
