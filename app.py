@@ -3,7 +3,7 @@
 # JTYYLSPH V6.3 PRO MAX — ENTERPRISE AI PLATFORM
 # Production • Persistent Models • Registry • Explainability
 # =========================================================
-import streamlit as st 
+import streamlit as st
 st.write("App starting...")
 
 import pandas as pd
