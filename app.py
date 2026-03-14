@@ -147,29 +147,69 @@ class JTYYLSPHv7:
         preds = self.model.predict(X_scaled)
         return preds
 # =========================================================
-# DATASET SIDEBAR
+# DATASET INGESTION — ROBUST VERSION
 # =========================================================
-st.sidebar.header("Dataset")
-st.sidebar.header("Dataset Controls")
+st.sidebar.header("Dataset Options")
+# Choose synthetic domain or upload files
 domain = st.sidebar.selectbox(
-    "Synthetic Dataset",
+    "Synthetic Dataset (if no files uploaded)",
     ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
 )
-uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-if uploaded:
-    df = pd.read_csv(uploaded)
-    target_col = st.sidebar.selectbox("Target Column", df.columns)
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
+uploaded_files = st.sidebar.file_uploader(
+    "Upload CSV File(s)", type=["csv"], accept_multiple_files=True
+)
+# Initialize dataset variables
+X = None
+y = None
+# ---------- FILE INGESTION ----------
+if uploaded_files:
+    dataframes = []
+    for f in uploaded_files:
+        try:
+            df = pd.read_csv(f)
+            dataframes.append(df)
+        except Exception as e:
+            st.warning(f"Failed to read {f.name}: {e}")
+    if dataframes:
+        df = pd.concat(dataframes, ignore_index=True, sort=False)
+        st.write("### Combined Dataset")
+        st.dataframe(df)
+        # Automatically select target column if multiple columns exist
+        if len(df.columns) > 1:
+            target_col = st.sidebar.selectbox("Target Column", df.columns)
+            X = df.drop(columns=[target_col])
+            y = df[target_col]
+        else:
+            X = df
+            y = pd.Series(np.random.randint(0, 2, len(df)), name="target")
+# ---------- SYNTHETIC DATA ----------
 else:
     X_data, y_data = make_classification(n_samples=500, n_features=6, random_state=42)
-    X = pd.DataFrame(X_data)
-    y = pd.Series(y_data)
+    X = pd.DataFrame(X_data, columns=[f"feature_{i}" for i in range(X_data.shape[1])])
+    y = pd.Series(y_data, name="target")
+    st.info(f"No files uploaded — using synthetic dataset for domain: {domain}")
+# ---------- SAFETY CHECK ----------
+if X is None or y is None:
+    st.error("No valid dataset could be loaded.")
+    st.stop()
+# ---------- STANDARDIZE COLUMN NAMES ----------
 X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
 st.session_state.feature_names = feature_names
-st.write("Dataset Shape:", X.shape)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# ---------- DISPLAY DATASET ----------
+st.write("### Dataset Shape:", X.shape)
+st.write("### Dataset Summary")
+st.write(X.describe())
+# ---------- TRAIN/TEST SPLIT ----------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+# ---------- DATA QUALITY CHECK ----------
+st.write("### Data Quality Check")
+st.write("Missing Values")
+st.write(X.isna().sum())
+st.write("Duplicate Rows")
+st.write(X.duplicated().sum())
 # =========================================================
 # INITIALIZE SESSION STATE
 # =========================================================
