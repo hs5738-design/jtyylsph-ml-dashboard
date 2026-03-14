@@ -1,11 +1,3 @@
-## 📜 License
-
-MIT License
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-![ML](https://img.shields.io/badge/Machine%20Learning-Scikit--Learn-orange)
-![Streamlit](https://img.shields.io/badge/Deployed-Streamlit-red)
-![License](https://img.shields.io/badge/License-MIT-green)
-
 # JTYYLSPH V7 — Enterprise AI Governance Platform
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue)
