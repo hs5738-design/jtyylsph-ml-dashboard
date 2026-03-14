@@ -467,6 +467,8 @@ jurisdiction = st.sidebar.selectbox(
      "Custom Enterprise Policy"]
 )
 st.sidebar.header("Dataset")
+uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+domain = st.sidebar.selectbox("Synthetic Dataset", ["Finance", "Healthcare", "Sports", "business", "emotion", "General"])
 
 uploaded_files = st.sidebar.file_uploader(
     "Upload Dataset or Documents",
@@ -799,14 +801,14 @@ with tabs[4]:
 
         if "drift_score" in df.columns:
             st.line_chart(df["drift_score"])
-
 # =========================================================
 # EXPLAINABILITY
 # =========================================================
 with tabs[5]:
 
-    if st.session_state.training_done:
-
+    if not st.session_state.training_done:
+        st.info("Train models first to view explainability.")
+    else:
         model_name = st.selectbox(
             "Explain Model",
             list(st.session_state.trained_models.keys()),
@@ -815,52 +817,10 @@ with tabs[5]:
 
         model = st.session_state.trained_models[model_name]
 
+        st.write("### Global Importance (Model Native)")
+
         if hasattr(model, "feature_importances_"):
-
             importances = model.feature_importances_
-
-            safe_barh(
-                feature_names[:len(importances)],
-                importances,
-                "Feature Importance"
-            )
-        if SHAP_AVAILABLE:
-
-            st.write("### SHAP Explanation")
-
-            try:
-                # Ensure feature alignment
-                expected_features = getattr(model, "feature_names_in_", None)
-
-                if expected_features is not None:
-                    missing = [f for f in expected_features if f not in X_test.columns]
-                    for m in missing:
-                        X_test[m] = 0
-                    X_shap = X_test[expected_features].iloc[:100]
-                else:
-                    X_shap = X_test.iloc[:100]
-
-                # ---- UNIVERSAL SHAP FIX ----
-                # Always use shap.Explainer (auto-selects correct algorithm)
-                explainer = shap.Explainer(model, X_train)
-
-                # This ALWAYS returns a shap.Explanation object
-                shap_values = explainer(X_shap)
-
-                # Plot safely
-                fig = plt.figure()
-                shap.summary_plot(shap_values, X_shap, show=False)
-                st.pyplot(fig)
-                plt.close(fig)
-
-            except Exception as e:
-                st.warning("SHAP explanation failed safely.")
-                st.text(str(e))
-
-        elif hasattr(model, "feature_importances_"):
-
-            importances = model.feature_importances_
-
             safe_barh(
                 feature_names[:len(importances)],
                 importances,
@@ -868,17 +828,77 @@ with tabs[5]:
             )
 
         elif hasattr(model, "coef_"):
-
             coefs = np.abs(model.coef_[0])
-
             safe_barh(
                 feature_names[:len(coefs)],
                 coefs,
                 "Model Coefficients"
             )
+        else:
+            st.info("Model type does not expose native feature importances.")
+
+        # ==========================
+        # SHAP EXPLANATIONS
+        # ==========================
+        if SHAP_AVAILABLE:
+            st.write("### SHAP Global Explanation")
+
+            try:
+                # ---- 1. Build a clean, numeric X_shap ----
+                # Never mutate X_test in place
+                X_base = X_test.copy()
+
+                # Keep only numeric columns for SHAP plotting
+                X_base = X_base.select_dtypes(include=[np.number])
+
+                # Align with model's expected features if available
+                expected = getattr(model, "feature_names_in_", None)
+
+                if expected is not None:
+                    X_fixed = X_base.copy()
+
+                    # Add any missing expected columns as zeros
+                    for col in expected:
+                        if col not in X_fixed.columns:
+                            X_fixed[col] = 0
+
+                    # Ensure correct column order
+                    X_shap = X_fixed[list(expected)].iloc[:100]
+                else:
+                    X_shap = X_base.iloc[:100]
+
+                # Handle any remaining NaN/inf
+                X_shap = X_shap.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+                # ---- 2. Universal SHAP explainer ----
+                explainer = shap.Explainer(model, X_train.select_dtypes(include=[np.number]))
+                shap_values = explainer(X_shap)
+
+                # ---- 3. Beeswarm / summary plot ----
+                fig = plt.figure()
+                shap.summary_plot(shap_values, X_shap, show=False)
+                st.pyplot(fig)
+                plt.close(fig)
+
+                # ==========================
+                # Optional: per-instance explanation
+                # ==========================
+                st.write("### SHAP Local Explanation (Single Instance)")
+                idx = st.slider("Instance index", 0, len(X_shap) - 1, 0)
+                x_row = X_shap.iloc[[idx]]
+
+                fig2 = plt.figure()
+                shap.waterfall_plot(shap_values[idx], show=False)
+                st.pyplot(fig2)
+                plt.close(fig2)
+
+            except Exception as e:
+                st.warning("SHAP explanation failed safely.")
+                st.text(str(e))
 
         else:
-            st.info("Model type does not support built-in explainability.")
+            st.info("SHAP is not installed; only native feature importances are shown.")
+
 # =========================================================
 # REGISTRY
 # =========================================================
@@ -906,3 +926,4 @@ with tabs[7]:
 
     if logs:
         st.dataframe(pd.DataFrame(logs))
+
