@@ -990,7 +990,6 @@ if TORCH_AVAILABLE_V63:
 
 
 def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
@@ -999,32 +998,31 @@ def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
     model = JTYYLSPHModel_V63(X_tensor.shape[1]).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
+    sensitive_idx = None  # ✅ this line must align with above lines inside function
+    if sensitive_feature in X_train.columns:
+        sensitive_idx = list(X_train.columns).index(sensitive_feature)
 
-        sensitive_idx = None
-        if sensitive_feature in X_train.columns:
-            sensitive_idx = list(X_train.columns).index(sensitive_feature)
+    history = []
 
-        history = []
+    for epoch in range(epochs):
+        optimizer.zero_grad()
 
-        for epoch in range(epochs):
-            optimizer.zero_grad()
+        loss, task_l, fair_l, drift_l = governance_loss_v63(
+            model, X_tensor, y_tensor, sensitive_idx
+        )
 
-            loss, task_l, fair_l, drift_l = governance_loss_v63(
-                model, X_tensor, y_tensor, sensitive_idx
-            )
+        loss.backward()
+        optimizer.step()
 
-            loss.backward()
-            optimizer.step()
+        history.append({
+            "epoch": epoch,
+            "loss": float(loss.item()),
+            "task": task_l,
+            "fairness": fair_l,
+            "drift": drift_l,
+        })
 
-            history.append({
-                "epoch": epoch,
-                "loss": float(loss.item()),
-                "task": task_l,
-                "fairness": fair_l,
-                "drift": drift_l,
-            })
-
-        return model, history
+    return model, history
 
 
     def predict_jtyylsph_v63(model, X):
