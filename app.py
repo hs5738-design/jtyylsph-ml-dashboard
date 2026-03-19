@@ -988,12 +988,14 @@ if TORCH_AVAILABLE_V63:
 
         return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
 
-
 def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
- 
+    model = JTYYLSPHModel_V63(X_train.shape[1])
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-    sensitive_idx = None  # ✅ this line must align with above lines inside function
+    X_tensor = torch.tensor(X_train.values.astype(np.float32))
+    y_tensor = torch.tensor(y_train.values.astype(np.float32)).unsqueeze(1)
+
+    sensitive_idx = None
     if sensitive_feature in X_train.columns:
         sensitive_idx = list(X_train.columns).index(sensitive_feature)
 
@@ -1020,11 +1022,11 @@ def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
     return model, history
 
 
-    def predict_jtyylsph_v63(model, X):
-        with torch.no_grad():
-            X_tensor = torch.tensor(X.values.astype(np.float32))
-            preds = model(X_tensor).squeeze().numpy()
-            return (preds > 0.5).astype(int)
+def predict_jtyylsph_v63(model, X):
+    with torch.no_grad():
+        X_tensor = torch.tensor(X.values.astype(np.float32))
+        preds = model(X_tensor).squeeze().numpy()
+        return (preds > 0.5).astype(int)
 
 # =========================================================
 # SAFE UI INJECTION (NON-DESTRUCTIVE)
@@ -1084,4 +1086,8 @@ except Exception as e:
     st.warning("V6.3 module failed safely")
     st.text(str(e))
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = JTYYLSPHModel_V63(X_tensor.shape[1]).to(device)
+X_tensor = X_tensor.to(device)
+y_tensor = y_tensor.to(device)
 
