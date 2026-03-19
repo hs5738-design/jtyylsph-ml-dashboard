@@ -496,46 +496,21 @@ uploaded_files = st.sidebar.file_uploader(
    ],
 )
 
-
-# DATABASE
-st.sidebar.header("Database Connection")
-db_url = st.sidebar.text_input(
-   "SQLAlchemy DB URL",
-   placeholder="postgresql://user:pass@host:5432/db",
-)
-
-
-@st.cache_data
-def load_db(query, engine):
-   return pd.read_sql(query, engine)
-
-query = st.sidebar.text_area(
-    "SQL Query",
-    placeholder="SELECT * FROM table LIMIT 100"
-)
-
-X = X if 'X' in locals() else None
-y = y if 'y' in locals() else None
-
-
 # DATABASE
 st.sidebar.header("Database Connection")
 
 db_url = st.sidebar.text_input(
     "SQLAlchemy DB URL",
     placeholder="postgresql://user:pass@host:5432/db",
+    key="db_url"
 )
 
 query = st.sidebar.text_area(
     "SQL Query",
-    placeholder="SELECT * FROM table LIMIT 100"
+    placeholder="SELECT * FROM table LIMIT 100",
+    key="query"
 )
 
-@st.cache_data
-def load_db(query, engine):
-    return pd.read_sql(query, engine)
-
-# सुरक्षा guard
 if query:
     if "drop" in query.lower() or "delete" in query.lower():
         st.error("Unsafe query blocked")
