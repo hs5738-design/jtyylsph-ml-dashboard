@@ -632,7 +632,7 @@ tabs = st.tabs(
 # =========================================================
 
 with tabs[0]:
-    if st.button("Train V6.3 Governance Model", key="v63_train_btn") or not st.session_state.training_done:
+    if st.button("Train V6.3 Governance Model", key="v63_train_btn_main") or not st.session_state.training_done:
         st.session_state.leaderboard = {}
 
         for name, model in models.items():
@@ -1040,7 +1040,7 @@ try:
     st.subheader("🧠 V6.3 Governance Model (Experimental)")
 
     if TORCH_AVAILABLE_V63:
-        if st.button("Train V6.3 Governance Model", key="v63_train_btn"):
+        if st.button("Train V6.3 Governance Model", key="v63_train_btn_exp"):
 
             with st.spinner("Training V6.3 Governance Model..."):
 
