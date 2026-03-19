@@ -1,6 +1,6 @@
 # =========================================================
-# JTYYLSPH V6.3 PRO MAX — ENTERPRISE AI PLATFORM 
-# Production • Persistent Models • Registry • Explainability 
+# JTYYLSPH V6.3 PRO MAX — ENTERPRISE AI PLATFORM
+# Production • Persistent Models • Registry • Explainability
 # =========================================================
 
 # =========================================================
@@ -990,12 +990,7 @@ if TORCH_AVAILABLE_V63:
 
 
 def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
-    y_tensor = torch.tensor(y_train.values.astype(np.float32)).view(-1, 1).to(device)
-
-    model = JTYYLSPHModel_V63(X_tensor.shape[1]).to(device)
+ 
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
     sensitive_idx = None  # ✅ this line must align with above lines inside function
@@ -1035,60 +1030,58 @@ def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
 # SAFE UI INJECTION (NON-DESTRUCTIVE)
 # =========================================================
 
-try:
-    st.divider()
-    st.subheader("🧠 V6.3 Governance Model (Experimental)")
+st.divider()
+st.subheader("🧠 V6.3 Governance Model (Experimental)")
 
+try:
     if TORCH_AVAILABLE_V63:
         if st.button("Train V6.3 Governance Model", key="v63_train_btn_exp"):
-
             with st.spinner("Training V6.3 Governance Model..."):
 
                 torch.manual_seed(42)
                 np.random.seed(42)
 
+                # Sample dataset (limit to 5000 rows to prevent UI freeze)
                 X_np = X_train.copy()
                 y_np = y_train.copy()
-
-                # Prevent UI freeze
                 X_np = X_np.sample(min(len(X_np), 5000), random_state=42)
                 y_np = y_np.loc[X_np.index]
 
+                # Train model
                 model_v63, history_v63 = train_jtyylsph_v63(
                     X_np, y_np, sensitive_feature=X_np.columns[0]
                 )
 
+                # Make predictions and calculate accuracy
                 preds = predict_jtyylsph_v63(model_v63, X_np)
                 acc = float((preds == y_np).mean())
 
-                # Save into system
+                # Save into session state
                 st.session_state.trained_models["V63_Governance"] = model_v63
-                acc = float((preds == y_np).mean())
+                st.session_state.leaderboard["V63_Governance"] = {"accuracy": acc}
 
-                st.session_state.leaderboard["V63_Governance"] = { "accuracy": acc }
-
+                # Register model safely
                 register_model(
                     "V63_Governance",
                     model_v63,
                     list(X_np.columns),
-                    {"accuracy": float((preds == y_np).mean())}
+                    {"accuracy": acc}
                 )
 
+                # Show metrics
                 st.write("### V6.3 Metrics")
                 st.json({"accuracy": acc})
 
+                # Show training history
                 st.write("### Training Dynamics")
                 st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
 
     else:
         st.info("PyTorch not available — V6.3 disabled")
+        st.code("pip install torch")
 
 except Exception as e:
     st.warning("V6.3 module failed safely")
     st.text(str(e))
-
-if not TORCH_AVAILABLE_V63:
-    st.warning("⚠️ Advanced Governance Model unavailable (PyTorch not installed)")
-    st.code("pip install torch")
 
 
