@@ -1,6 +1,6 @@
 # =========================================================
 # JTYYLSPH V6.3 PRO MAX — ENTERPRISE AI PLATFORM
-# Production • Persistent Models • Registry • Explainability
+# Production • Persistent Models • Registry • Explainability 
 # =========================================================
 
 # =========================================================
