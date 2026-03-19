@@ -1,3 +1,8 @@
+import streamlit as st
+
+if st.button("Reboot App"):
+    st.session_state.clear()
+    st.experimental_rerun()
 # =========================================================
 # JTYYLSPH V6.3 PRO MAX — ENTERPRISE AI PLATFORM
 # Production • Persistent Models • Registry • Explainability
@@ -1138,7 +1143,5 @@ except Exception as e:
     st.text(str(e))
 import streamlit as st
 
-if st.button("Reboot App"):
-    st.session_state.clear()
-    st.experimental_rerun()
+
 
