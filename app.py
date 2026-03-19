@@ -1136,5 +1136,9 @@ try:
 except Exception as e:
     st.warning("V6.3 module failed safely")
     st.text(str(e))
+import streamlit as st
 
+if st.button("Reboot App"):
+    st.session_state.clear()
+    st.experimental_rerun()
 
