@@ -137,70 +137,84 @@ def save_registry(reg):
 
 
 def register_model(name, model, feature_names, metrics):
-   registry = load_registry()
+    registry = load_registry()
 
+    versions = []
+    for r in registry:
+        if r.get("name") == name:
+            try:
+                versions.append(int(r.get("version", 0)))
+            except:
+                pass
 
-   versions = []
-   for r in registry:
-       if r.get("name") == name:
-           try:
-               versions.append(int(r.get("version", 0)))
-           except:
-               pass
+    version = max(versions) + 1 if versions else 1
 
+    is_torch = "torch" in str(type(model)).lower()
 
-   version = max(versions) + 1 if versions else 1
-   model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pkl")
+    if is_torch:
+        model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pt")
+        torch.save(model.state_dict(), model_path)
 
+        artifact = {
+            "model_type": "torch",
+            "feature_names": feature_names,
+            "metrics": metrics,
+        }
 
-   safe_metrics = {
-       "accuracy": metrics.get("accuracy", 0),
-       "precision": metrics.get("precision", 0),
-       "recall": metrics.get("recall", 0),
-       "f1": metrics.get("f1", 0),
-   }
+    else:
+        model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pkl")
 
+        artifact = {
+            "model": model,
+            "feature_names": feature_names,
+            "metrics": metrics,
+        }
 
-   artifact = {
-       "model": model,
-       "feature_names": feature_names,
-       "metrics": safe_metrics,
-   }
+        joblib.dump(artifact, model_path)
 
+    record = {
+        "name": name,
+        "version": version,
+        "path": model_path,
+        "metrics": metrics,
+        "time": datetime.datetime.utcnow().isoformat(),
+        "type": "torch" if is_torch else "sklearn"
+    }
 
-   joblib.dump(artifact, model_path)
-
-
-   record = {
-       "name": name,
-       "version": version,
-       "path": model_path,
-       "metrics": safe_metrics,
-       "time": datetime.datetime.utcnow().isoformat(),
-   }
-
-
-   registry.append(record)
-   save_registry(registry)
+    registry.append(record)
+    save_registry(registry)
 
 
 def load_models_from_registry():
-   registry = load_registry()
-   models = {}
+    registry = load_registry()
+    models = {}
 
+    for rec in registry:
+        try:
+            path = rec.get("path")
 
-   for rec in registry:
-       try:
-           path = rec.get("path")
-           if path and os.path.exists(path):
-               artifact = joblib.load(path)
-               if artifact.get("model") is not None:
-                 models[f"{rec['name']}_v{rec['version']}"] = artifact
-       except:
-           continue
+            if not path or not os.path.exists(path):
+                continue
 
+            if rec.get("type") == "torch":
+                input_dim = len(rec.get("metrics", {}))  # fallback
+                model = JTYYLSPHModel_V63(input_dim)
+                model.load_state_dict(torch.load(path))
+                model.eval()
 
-   return models
+                models[f"{rec['name']}_v{rec['version']}"] = {
+                    "model": model,
+                    "metrics": rec.get("metrics", {})
+                }
+
+            else:
+                artifact = joblib.load(path)
+                models[f"{rec['name']}_v{rec['version']}"] = artifact
+
+        except:
+            continue
+
+    return models
 
 
 @st.cache_resource
@@ -452,7 +466,7 @@ st.sidebar.header("Dataset Controls")
 
 domain = st.sidebar.selectbox(
    "Synthetic Dataset",
-   ["Finance", "Healthcare", "Sports", "business", "emotion", "General"]
+   ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
 )
 
 
@@ -618,7 +632,7 @@ tabs = st.tabs(
 # =========================================================
 
 with tabs[0]:
-    if st.button("Train Models") or not st.session_state.training_done:
+    if st.button("Train V6.3 Governance Model", key="v63_train_btn") or not st.session_state.training_done:
         st.session_state.leaderboard = {}
 
         for name, model in models.items():
@@ -975,12 +989,16 @@ if TORCH_AVAILABLE_V63:
         return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
 
 
-    def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
-        X_tensor = torch.tensor(X_train.values.astype(np.float32))
-        y_tensor = torch.tensor(y_train.values.astype(np.float32)).view(-1, 1)
+def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
 
-        model = JTYYLSPHModel_V63(X_tensor.shape[1])
-        optimizer = optim.Adam(model.parameters(), lr=0.01)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
+    y_tensor = torch.tensor(y_train.values.astype(np.float32)).view(-1, 1).to(device)
+
+    model = JTYYLSPHModel_V63(X_tensor.shape[1]).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+
 
         sensitive_idx = None
         if sensitive_feature in X_train.columns:
@@ -1024,24 +1042,45 @@ try:
     st.subheader("🧠 V6.3 Governance Model (Experimental)")
 
     if TORCH_AVAILABLE_V63:
-        if st.button("Train V6.3 Governance Model"):
+        if st.button("Train V6.3 Governance Model", key="v63_train_btn"):
 
-            X_np = X_train.copy()
-            y_np = y_train.copy()
+            with st.spinner("Training V6.3 Governance Model..."):
 
-            model_v63, history_v63 = train_jtyylsph_v63(
-                X_np, y_np, sensitive_feature=X_np.columns[0]
-            )
+                torch.manual_seed(42)
+                np.random.seed(42)
 
-            preds = predict_jtyylsph_v63(model_v63, X_np)
+                X_np = X_train.copy()
+                y_np = y_train.copy()
 
-            st.write("### V6.3 Metrics")
-            st.json({
-                "accuracy": float((preds == y_np).mean())
-            })
+                # Prevent UI freeze
+                X_np = X_np.sample(min(len(X_np), 5000), random_state=42)
+                y_np = y_np.loc[X_np.index]
 
-            st.write("### Training Dynamics")
-            st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
+                model_v63, history_v63 = train_jtyylsph_v63(
+                    X_np, y_np, sensitive_feature=X_np.columns[0]
+                )
+
+                preds = predict_jtyylsph_v63(model_v63, X_np)
+                acc = float((preds == y_np).mean())
+
+                # Save into system
+                st.session_state.trained_models["V63_Governance"] = model_v63
+                acc = float((preds == y_np).mean())
+
+                st.session_state.leaderboard["V63_Governance"] = { "accuracy": acc }
+
+                register_model(
+                    "V63_Governance",
+                    model_v63,
+                    list(X_np.columns),
+                    {"accuracy": float((preds == y_np).mean())}
+                )
+
+                st.write("### V6.3 Metrics")
+                st.json({"accuracy": acc})
+
+                st.write("### Training Dynamics")
+                st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
 
     else:
         st.info("PyTorch not available — V6.3 disabled")
@@ -1053,4 +1092,5 @@ except Exception as e:
 if not TORCH_AVAILABLE_V63:
     st.warning("⚠️ Advanced Governance Model unavailable (PyTorch not installed)")
     st.code("pip install torch")
+
 
