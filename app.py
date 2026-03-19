@@ -965,28 +965,39 @@ if TORCH_AVAILABLE_V63:
             return torch.sigmoid(self.linear(x))
 
 
-    def governance_loss_v63(model, X, y, sensitive_idx=None):
-        preds = model(X)
+def governance_loss_v63(model, X, y, sensitive_idx=None):
+    """
+    Computes task loss + fairness penalty + drift penalty
+    Fully GPU/CPU device-aware
+    """
+    device = next(model.parameters()).device  # detect model device
+    preds = model(X.to(device))  # ensure input on same device as model
+    y = y.to(device)
 
-        task_loss = nn.BCELoss()(preds, y)
+    # Task loss (binary cross-entropy)
+    task_loss = nn.BCELoss()(preds, y)
 
-        fairness_penalty = torch.tensor(0.0)
-        if sensitive_idx is not None:
-            s = X[:, sensitive_idx]
-            thr = torch.median(s)
-            g0 = preds[s <= thr]
-            g1 = preds[s > thr]
-            if len(g0) > 0 and len(g1) > 0:
-                fairness_penalty = torch.abs(g0.mean() - g1.mean())
+    # Fairness penalty
+    fairness_penalty = torch.tensor(0.0, device=device)
+    if sensitive_idx is not None:
+        s = X[:, sensitive_idx]
+        thr = torch.median(s)
+        g0 = preds[s <= thr]
+        g1 = preds[s > thr]
+        if len(g0) > 0 and len(g1) > 0:
+            fairness_penalty = torch.abs(g0.mean() - g1.mean())
 
-        drift_penalty = torch.abs(preds.mean() - y.mean())
+    # Drift penalty
+    drift_penalty = torch.abs(preds.mean() - y.mean())
 
-        lambda_fair = 0.1
-        lambda_drift = torch.clamp(drift_penalty * 2, 0, 1)
+    # Weighted sum
+    lambda_fair = 0.1
+    lambda_drift = torch.clamp(drift_penalty * 2, 0, 1)
 
-        loss = task_loss + lambda_fair * fairness_penalty + lambda_drift * drift_penalty
+    loss = task_loss + lambda_fair * fairness_penalty + lambda_drift * drift_penalty
 
-        return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
+    return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
+
 
 def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30):
     model = JTYYLSPHModel_V63(X_train.shape[1])
@@ -1027,42 +1038,83 @@ def predict_jtyylsph_v63(model, X):
         X_tensor = torch.tensor(X.values.astype(np.float32))
         preds = model(X_tensor).squeeze().numpy()
         return (preds > 0.5).astype(int)
-
-# =========================================================
-# SAFE UI INJECTION (NON-DESTRUCTIVE)
-# =========================================================
+# ============================
+# V6.3 GOVERNANCE TRAINING (GPU/CPU READY)
+# ============================
 
 st.divider()
 st.subheader("🧠 V6.3 Governance Model (Experimental)")
 
 try:
     if TORCH_AVAILABLE_V63:
+
         if st.button("Train V6.3 Governance Model", key="v63_train_btn_exp"):
             with st.spinner("Training V6.3 Governance Model..."):
 
+                # Set seeds
                 torch.manual_seed(42)
                 np.random.seed(42)
 
-                # Sample dataset (limit to 5000 rows to prevent UI freeze)
-                X_np = X_train.copy()
-                y_np = y_train.copy()
-                X_np = X_np.sample(min(len(X_np), 5000), random_state=42)
-                y_np = y_np.loc[X_np.index]
+                # Device selection
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                st.write(f"Training on device: {device}")
+
+                # Limit dataset to prevent UI freeze
+                X_np = X_train.sample(min(len(X_train), 5000), random_state=42)
+                y_np = y_train.loc[X_np.index]
+
+                # Move training function to support device
+                def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=30, device="cpu"):
+                    model = JTYYLSPHModel_V63(X_train.shape[1]).to(device)
+                    optimizer = optim.Adam(model.parameters(), lr=0.01)
+
+                    X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
+                    y_tensor = torch.tensor(y_train.values.astype(np.float32)).unsqueeze(1).to(device)
+
+                    sensitive_idx = None
+                    if sensitive_feature in X_train.columns:
+                        sensitive_idx = list(X_train.columns).index(sensitive_feature)
+
+                    history = []
+
+                    for epoch in range(epochs):
+                        optimizer.zero_grad()
+                        loss, task_l, fair_l, drift_l = governance_loss_v63(
+                            model, X_tensor, y_tensor, sensitive_idx
+                        )
+                        loss.backward()
+                        optimizer.step()
+
+                        history.append({
+                            "epoch": epoch,
+                            "loss": float(loss.item()),
+                            "task": task_l,
+                            "fairness": fair_l,
+                            "drift": drift_l,
+                        })
+                    return model, history
+
+                # GPU-ready prediction function
+                def predict_jtyylsph_v63(model, X):
+                    with torch.no_grad():
+                        X_tensor = torch.tensor(X.values.astype(np.float32)).to(next(model.parameters()).device)
+                        preds = model(X_tensor).squeeze().cpu().numpy()
+                        return (preds > 0.5).astype(int)
 
                 # Train model
                 model_v63, history_v63 = train_jtyylsph_v63(
-                    X_np, y_np, sensitive_feature=X_np.columns[0]
+                    X_np, y_np, sensitive_feature=X_np.columns[0], device=device
                 )
 
-                # Make predictions and calculate accuracy
+                # Predictions and accuracy
                 preds = predict_jtyylsph_v63(model_v63, X_np)
                 acc = float((preds == y_np).mean())
 
-                # Save into session state
+                # Store in session
                 st.session_state.trained_models["V63_Governance"] = model_v63
                 st.session_state.leaderboard["V63_Governance"] = {"accuracy": acc}
 
-                # Register model safely
+                # Register model
                 register_model(
                     "V63_Governance",
                     model_v63,
@@ -1070,11 +1122,10 @@ try:
                     {"accuracy": acc}
                 )
 
-                # Show metrics
+                # Display results
                 st.write("### V6.3 Metrics")
                 st.json({"accuracy": acc})
 
-                # Show training history
                 st.write("### Training Dynamics")
                 st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
 
@@ -1086,8 +1137,4 @@ except Exception as e:
     st.warning("V6.3 module failed safely")
     st.text(str(e))
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = JTYYLSPHModel_V63(X_tensor.shape[1]).to(device)
-X_tensor = X_tensor.to(device)
-y_tensor = y_tensor.to(device)
 
