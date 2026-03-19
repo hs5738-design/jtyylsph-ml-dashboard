@@ -231,28 +231,19 @@ with tabs[5]:
 
         model = st.session_state.trained_models[model_name]
 
-        st.write("### Global Importance (Model Native)")
+        st.write("### Global Importance")
 
         if hasattr(model, "feature_importances_"):
-            safe_barh(
-                feature_names[:len(model.feature_importances_)],
-                model.feature_importances_,
-                "Feature Importance",
-            )
+            safe_barh(feature_names, model.feature_importances_, "Feature Importance")
 
         elif hasattr(model, "coef_"):
             coefs = np.abs(model.coef_[0])
-            safe_barh(
-                feature_names[:len(coefs)],
-                coefs,
-                "Model Coefficients",
-            )
+            safe_barh(feature_names, coefs, "Model Coefficients")
+
         else:
-            st.info("Model does not expose feature importances.")
+            st.info("No native explainability available.")
 
-drift_penalty = torch.abs(pred_mean - model.running_mean)
-
-model.running_mean = 0.9 * model.running_mean + 0.1 * pred_mean.detach()
+        # ✅ SHAP BLOCK (CORRECTLY INDENTED)
         # SHAP
         if SHAP_AVAILABLE:
             st.write("### SHAP Global Explanation")
