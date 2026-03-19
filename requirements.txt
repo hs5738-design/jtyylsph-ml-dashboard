@@ -13,3 +13,5 @@ pytesseract
 shap==0.44.1
 openpyxl
 pyarrow
+torch
+pytest
