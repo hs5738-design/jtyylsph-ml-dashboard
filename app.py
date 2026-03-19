@@ -560,8 +560,6 @@ X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
 st.session_state.feature_names = feature_names
 
-
-st.write("Dataset Shape:", X.shape)
 st.write("### Dataset Summary")
 st.write(X.describe())
 
@@ -1052,4 +1050,7 @@ except Exception as e:
     st.warning("V6.3 module failed safely")
     st.text(str(e))
 
+if not TORCH_AVAILABLE_V63:
+    st.warning("⚠️ Advanced Governance Model unavailable (PyTorch not installed)")
+    st.code("pip install torch")
 
