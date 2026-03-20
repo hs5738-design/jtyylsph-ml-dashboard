@@ -944,12 +944,11 @@ def governance_loss_v63(model, X, y, sensitive_idx=None):
 
     return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
 
-    X_train = X_train.select_dtypes(include=[np.number]).fillna(0)
+X_train = X_train.select_dtypes(include=[np.number]).fillna(0)
 y_train = y_train.fillna(0)
-
-    sensitive_idx = None
-    if sensitive_feature in X_train.columns:
-        sensitive_idx = list(X_train.columns).index(sensitive_feature)
+sensitive_idx = None
+if sensitive_feature in X_train.columns:
+    sensitive_idx = list(X_train.columns).index(sensitive_feature)
 
     history = []
 
