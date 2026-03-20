@@ -8,8 +8,8 @@
 # Production • Persistent Models • Registry • Explainability
 # =========================================================
 import streamlit as st
-
 st.write("App starting...")
+
 
 import pandas as pd
 import numpy as np
@@ -24,53 +24,58 @@ import traceback
 import re
 import xml.etree.ElementTree as ET
 import logging
-
 logging.basicConfig(level=logging.DEBUG)
+
 
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score
+   accuracy_score, precision_score, recall_score, f1_score
 )
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from scipy.stats import wasserstein_distance, ks_2samp
 
+
 # =========================================================
 # OPTIONAL LIBRARIES
 # =========================================================
 try:
-    import pdfplumber
+   import pdfplumber
 except:
-    pdfplumber = None
+   pdfplumber = None
+
 
 try:
-    import docx
+   import docx
 except:
-    docx = None
+   docx = None
+
 
 try:
-    from PIL import Image
+   from PIL import Image
 except:
-    Image = None
+   Image = None
+
 
 try:
-    import pytesseract
+   import pytesseract
 except:
-    pytesseract = None
+   pytesseract = None
+
 
 try:
-    import sqlalchemy
+   import sqlalchemy
 except:
-    sqlalchemy = None
+   sqlalchemy = None
+
 
 # SHAP
 try:
-    import shap
-
-    SHAP_AVAILABLE = True
+   import shap
+   SHAP_AVAILABLE = True
 except:
-    SHAP_AVAILABLE = False
+   SHAP_AVAILABLE = False
 
 
 # =========================================================
@@ -79,14 +84,15 @@ except:
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):
-    st.error("Application Error")
-    error_text = "".join(
-        traceback.format_exception(exc_type, exc_value, exc_traceback)
-    )
-    st.text(error_text)
+   st.error("Application Error")
+   error_text = "".join(
+       traceback.format_exception(exc_type, exc_value, exc_traceback)
+   )
+   st.text(error_text)
 
 
 sys.excepthook = handle_exception
+
 
 # =========================================================
 # CONFIG
@@ -98,13 +104,14 @@ MODEL_REGISTRY = "model_registry.json"
 MODEL_DIR = "models"
 LOG_FILE = "prediction_logs.jsonl"
 
+
 os.makedirs(MODEL_DIR, exist_ok=True)
+
 
 try:
     import torch
     import torch.nn as nn
     import torch.optim as optim
-
     TORCH_AVAILABLE_V63 = True
 except:
     TORCH_AVAILABLE_V63 = False
@@ -120,8 +127,6 @@ if TORCH_AVAILABLE_V63:
 
         def forward(self, x):
             return torch.sigmoid(self.linear(x))
-
-
 def model_hash(path):
     if not os.path.exists(path):
         return "missing"
@@ -139,12 +144,9 @@ def load_registry():
     except:
         return []
 
-
 def save_registry(reg):
     with open(MODEL_REGISTRY, "w") as f:
         json.dump(reg, f, indent=2)
-
-
 def register_model(name, model, feature_names, metrics):
     registry = load_registry()
     # Determine next version
@@ -179,7 +181,6 @@ def register_model(name, model, feature_names, metrics):
     }
     registry.append(record)
     save_registry(registry)
-
 
 def load_models_from_registry():
     registry = load_registry()
@@ -220,9 +221,10 @@ def load_models_from_registry():
     return models
 
 
+
 @st.cache_resource
 def cached_registry():
-    return load_models_from_registry()
+   return load_models_from_registry()
 
 
 # =========================================================
@@ -231,152 +233,176 @@ def cached_registry():
 
 
 def fairness_analysis(model, X, y, sensitive_feature=None):
-    preds = model.predict(X)
-    base_acc = accuracy_score(y, preds)
 
-    results = {"overall_accuracy": float(base_acc)}
 
-    if sensitive_feature is None:
-        results["note"] = "No sensitive feature selected"
-        return results
+   preds = model.predict(X)
+   base_acc = accuracy_score(y, preds)
 
-    groups = X[sensitive_feature]
-    group_metrics = {}
 
-    for g in groups.unique():
-        mask = (groups == g)
-        if mask.sum() == 0:
-            continue
-        acc = accuracy_score(y[mask], preds[mask])
-        group_metrics[str(g)] = float(acc)
+   results = {"overall_accuracy": float(base_acc)}
 
-    results["group_accuracy"] = group_metrics
 
-    if len(group_metrics) > 1:
-        vals = list(group_metrics.values())
-        results["fairness_gap"] = float(max(vals) - min(vals))
+   if sensitive_feature is None:
+       results["note"] = "No sensitive feature selected"
+       return results
 
-    return results
+
+   groups = X[sensitive_feature]
+   group_metrics = {}
+
+
+   for g in groups.unique():
+       mask = (groups == g)
+       if mask.sum() == 0:
+           continue
+       acc = accuracy_score(y[mask], preds[mask])
+       group_metrics[str(g)] = float(acc)
+
+
+   results["group_accuracy"] = group_metrics
+
+
+   if len(group_metrics) > 1:
+       vals = list(group_metrics.values())
+       results["fairness_gap"] = float(max(vals) - min(vals))
+
+
+   return results
+
+
 
 
 def safe_barh(names, values, title):
-    names = list(names)
-    values = list(values)
+   names = list(names)
+   values = list(values)
 
-    mn = min(len(names), len(values))
-    names = names[:mn]
-    values = values[:mn]
 
-    fig, ax = plt.subplots()
-    ax.barh(names, values)
-    ax.set_title(title)
-    st.pyplot(fig)
+   mn = min(len(names), len(values))
+   names = names[:mn]
+   values = values[:mn]
+
+
+   fig, ax = plt.subplots()
+   ax.barh(names, values)
+   ax.set_title(title)
+   st.pyplot(fig)
 
 
 def log_drift_metrics(feature, train, test, value, metric):
-    entry = {
-        "time": datetime.datetime.utcnow().isoformat(),
-        "feature": feature,
-        "metric": metric,
-        "drift_score": float(value),
-    }
-    try:
-        with open(PREDICTION_DRIFT_LOG, "a") as f:
-            f.write(json.dumps(entry) + "\n")
-    except:
-        pass
+   entry = {
+       "time": datetime.datetime.utcnow().isoformat(),
+       "feature": feature,
+       "metric": metric,
+       "drift_score": float(value),
+   }
+   try:
+       with open(PREDICTION_DRIFT_LOG, "a") as f:
+           f.write(json.dumps(entry) + "\n")
+   except:
+       pass
 
 
 def log_prediction(model_name):
-    entry = {
-        "time": datetime.datetime.utcnow().isoformat(),
-        "model": model_name
-    }
-    try:
-        with open(LOG_FILE, "a") as f:
-            f.write(json.dumps(entry) + "\n")
-    except:
-        pass
+   entry = {
+       "time": datetime.datetime.utcnow().isoformat(),
+       "model": model_name
+   }
+   try:
+       with open(LOG_FILE, "a") as f:
+           f.write(json.dumps(entry) + "\n")
+   except:
+       pass
 
 
 def load_json_lines(file):
-    rows = []
-    if os.path.exists(file):
-        with open(file) as f:
-            for line in f:
-                try:
-                    rows.append(json.loads(line))
-                except:
-                    continue
-    return rows
+   rows = []
+   if os.path.exists(file):
+       with open(file) as f:
+           for line in f:
+               try:
+                   rows.append(json.loads(line))
+               except:
+                   continue
+   return rows
 
 
 def extract_text_features(text):
-    words = text.split()
-    feats = {
-        "char_count": len(text),
-        "word_count": len(words),
-        "avg_word_length": np.mean([len(w) for w in words]) if words else 0,
-        "numeric_count": len(re.findall(r"\d+", text)),
-        "uppercase_ratio": sum(c.isupper() for c in text) / max(len(text), 1),
-        "digit_ratio": sum(c.isdigit() for c in text) / max(len(text), 1),
-        "sentence_count": len(re.split(r"[.!?]", text))
-    }
-    return pd.DataFrame([feats])
+   words = text.split()
+   feats = {
+       "char_count": len(text),
+       "word_count": len(words),
+       "avg_word_length": np.mean([len(w) for w in words]) if words else 0,
+       "numeric_count": len(re.findall(r"\d+", text)),
+       "uppercase_ratio": sum(c.isupper() for c in text) / max(len(text), 1),
+       "digit_ratio": sum(c.isdigit() for c in text) / max(len(text), 1),
+       "sentence_count": len(re.split(r"[.!?]", text))
+   }
+   return pd.DataFrame([feats])
 
 
 def ingest_file(uploaded):
-    name = uploaded.name.lower()
+   name = uploaded.name.lower()
 
-    if name.endswith(".csv"):
-        return pd.read_csv(uploaded)
 
-    if name.endswith(".xlsx"):
-        return pd.read_excel(uploaded)
+   if name.endswith(".csv"):
+       return pd.read_csv(uploaded)
 
-    if name.endswith(".json"):
-        return pd.read_json(uploaded)
 
-    if name.endswith(".parquet"):
-        try:
-            return pd.read_parquet(uploaded)
-        except:
-            return None
+   if name.endswith(".xlsx"):
+       return pd.read_excel(uploaded)
 
-    if name.endswith(".sql"):
-        return extract_text_features(uploaded.read().decode())
 
-    if name.endswith(".xml"):
-        tree = ET.parse(uploaded)
-        root = tree.getroot()
-        text = " ".join([elem.text or "" for elem in root.iter()])
-        return extract_text_features(text)
+   if name.endswith(".json"):
+       return pd.read_json(uploaded)
 
-    if name.endswith(".pdf") and pdfplumber:
-        text = ""
-        with pdfplumber.open(uploaded) as pdf:
-            for page in pdf.pages:
-                t = page.extract_text()
-                if t:
-                    text += t
-        return extract_text_features(text)
 
-    if name.endswith(".docx") and docx:
-        doc = docx.Document(uploaded)
-        text = " ".join([p.text for p in doc.paragraphs])
-        return extract_text_features(text)
+   if name.endswith(".parquet"):
+       try:
+           return pd.read_parquet(uploaded)
+       except:
+           return None
 
-    if name.endswith(".txt") or name.endswith(".log"):
-        return extract_text_features(uploaded.read().decode())
 
-    if name.endswith((".png", ".jpg", ".jpeg")) and Image and pytesseract:
-        img = Image.open(uploaded)
-        text = pytesseract.image_to_string(img)
-        df = extract_text_features(text)
-        df["image_width"], df["image_height"] = img.size
-        return df
+   if name.endswith(".sql"):
+       return extract_text_features(uploaded.read().decode())
 
-    return None
+
+   if name.endswith(".xml"):
+       tree = ET.parse(uploaded)
+       root = tree.getroot()
+       text = " ".join([elem.text or "" for elem in root.iter()])
+       return extract_text_features(text)
+
+
+   if name.endswith(".pdf") and pdfplumber:
+       text = ""
+       with pdfplumber.open(uploaded) as pdf:
+           for page in pdf.pages:
+               t = page.extract_text()
+               if t:
+                   text += t
+       return extract_text_features(text)
+
+
+   if name.endswith(".docx") and docx:
+       doc = docx.Document(uploaded)
+       text = " ".join([p.text for p in doc.paragraphs])
+       return extract_text_features(text)
+
+
+   if name.endswith(".txt") or name.endswith(".log"):
+       return extract_text_features(uploaded.read().decode())
+
+
+   if name.endswith((".png", ".jpg", ".jpeg")) and Image and pytesseract:
+       img = Image.open(uploaded)
+       text = pytesseract.image_to_string(img)
+       df = extract_text_features(text)
+       df["image_width"], df["image_height"] = img.size
+       return df
+
+
+   return None
 
 
 # =========================================================
@@ -385,16 +411,20 @@ def ingest_file(uploaded):
 
 
 if "trained_models" not in st.session_state:
-    st.session_state.trained_models = {}
+   st.session_state.trained_models = {}
+
 
 if "leaderboard" not in st.session_state:
-    st.session_state.leaderboard = {}
+   st.session_state.leaderboard = {}
+
 
 if "training_done" not in st.session_state:
-    st.session_state.training_done = False
+   st.session_state.training_done = False
+
 
 if "feature_names" not in st.session_state:
-    st.session_state.feature_names = []
+   st.session_state.feature_names = []
+
 
 # =========================================================
 # AUTOLOAD REGISTRY
@@ -402,11 +432,12 @@ if "feature_names" not in st.session_state:
 
 
 if not st.session_state.trained_models:
-    loaded = cached_registry()
-    for name, artifact in loaded.items():
-        st.session_state.trained_models[name] = artifact["model"]
-        st.session_state.leaderboard[name] = artifact.get("metrics", {})
-    st.session_state.training_done = bool(st.session_state.trained_models)
+   loaded = cached_registry()
+   for name, artifact in loaded.items():
+       st.session_state.trained_models[name] = artifact["model"]
+       st.session_state.leaderboard[name] = artifact.get("metrics", {})
+   st.session_state.training_done = bool(st.session_state.trained_models)
+
 
 # =========================================================
 # UI
@@ -415,6 +446,7 @@ if not st.session_state.trained_models:
 
 st.title("🚀 JTYYLSPH — AI Governance Platform")
 
+
 # =========================================================
 # DATA INPUT SECTION
 # =========================================================
@@ -422,57 +454,65 @@ st.title("🚀 JTYYLSPH — AI Governance Platform")
 
 st.sidebar.header("Compliance Mode")
 jurisdiction = st.sidebar.selectbox(
-    "Select Regulatory Framework",
-    [
-        "United States (SR 11-7)",
-        "European Union (EU AI Act)",
-        "UK Model Risk Guidance",
-        "APAC General Risk Framework",
-        "Custom Enterprise Policy",
-    ],
+   "Select Regulatory Framework",
+   [
+       "United States (SR 11-7)",
+       "European Union (EU AI Act)",
+       "UK Model Risk Guidance",
+       "APAC General Risk Framework",
+       "Custom Enterprise Policy",
+   ],
 )
+
 
 st.sidebar.header("Dataset")
 st.sidebar.header("Dataset Controls")
 
+
 domain = st.sidebar.selectbox(
-    "Synthetic Dataset",
-    ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
+   "Synthetic Dataset",
+   ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
 )
+
 
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
+
 if uploaded:
-    df = pd.read_csv(uploaded)
-    target_col = st.sidebar.selectbox("Target Column", df.columns)
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
+   df = pd.read_csv(uploaded)
+   target_col = st.sidebar.selectbox("Target Column", df.columns)
+   X = df.drop(columns=[target_col])
+   y = df[target_col]
 else:
-    X_data, y_data = make_classification(
-        n_samples=500, n_features=6, random_state=42
-    )
-    X = pd.DataFrame(X_data)
-    y = pd.Series(y_data)
+   X_data, y_data = make_classification(
+       n_samples=500, n_features=6, random_state=42
+   )
+   X = pd.DataFrame(X_data)
+   y = pd.Series(y_data)
+
 
 X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
 st.session_state.feature_names = feature_names
 
+
 st.write("Dataset Shape:", X.shape)
 
+
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+   X, y, test_size=0.2, random_state=42
 )
 
+
 uploaded_files = st.sidebar.file_uploader(
-    "Upload Dataset or Documents",
-    accept_multiple_files=True,
-    type=[
-        "csv", "xlsx", "json", "parquet",
-        "pdf", "docx", "txt", "log",
-        "xml", "sql",
-        "png", "jpg", "jpeg",
-    ],
+   "Upload Dataset or Documents",
+   accept_multiple_files=True,
+   type=[
+       "csv", "xlsx", "json", "parquet",
+       "pdf", "docx", "txt", "log",
+       "xml", "sql",
+       "png", "jpg", "jpeg",
+   ],
 )
 
 # DATABASE
@@ -497,38 +537,43 @@ if query:
 
 # FILE INGESTION
 elif uploaded_files:
-    dataframes = []
+   dataframes = []
 
-    for f in uploaded_files:
-        df = ingest_file(f)
-        if df is not None:
-            dataframes.append(df)
 
-    if dataframes:
-        df = pd.concat(dataframes, ignore_index=True, sort=False)
-        st.write("Combined Dataset")
-        st.dataframe(df)
+   for f in uploaded_files:
+       df = ingest_file(f)
+       if df is not None:
+           dataframes.append(df)
 
-        if len(df.columns) > 1:
-            target_col = st.sidebar.selectbox("Target Column", df.columns)
-            X = df.drop(columns=[target_col])
-            y = df[target_col]
-        else:
-            X = df
-            y = np.random.randint(0, 2, len(df))
+
+   if dataframes:
+       df = pd.concat(dataframes, ignore_index=True, sort=False)
+       st.write("Combined Dataset")
+       st.dataframe(df)
+
+
+       if len(df.columns) > 1:
+           target_col = st.sidebar.selectbox("Target Column", df.columns)
+           X = df.drop(columns=[target_col])
+           y = df[target_col]
+       else:
+           X = df
+           y = np.random.randint(0, 2, len(df))
 
 
 # SYNTHETIC
 else:
-    X_data, y_data = make_classification(
-        n_samples=500, n_features=6, random_state=42
-    )
-    X = pd.DataFrame(X_data)
-    y = pd.Series(y_data)
+   X_data, y_data = make_classification(
+       n_samples=500, n_features=6, random_state=42
+   )
+   X = pd.DataFrame(X_data)
+   y = pd.Series(y_data)
+
 
 if X is None:
-    st.error("No valid dataset could be loaded.")
-    st.stop()
+   st.error("No valid dataset could be loaded.")
+   st.stop()
+
 
 X.columns = [str(c) for c in X.columns]
 feature_names = list(X.columns)
@@ -537,9 +582,11 @@ st.session_state.feature_names = feature_names
 st.write("### Dataset Summary")
 st.write(X.describe())
 
+
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+   X, y, test_size=0.2, random_state=42
 )
+
 
 st.write("### Data Quality Check")
 st.write("Missing Values")
@@ -547,21 +594,24 @@ st.write(X.isna().sum())
 st.write("Duplicate Rows")
 st.write(X.duplicated().sum())
 
+
 # =========================================================
 # MODELS
 # =========================================================
 
 
 models = {
-    "RandomForest": RandomForestClassifier(),
-    "GradientBoosting": GradientBoostingClassifier(),
-    "LogisticRegression": LogisticRegression(max_iter=1000, solver="liblinear"),
+   "RandomForest": RandomForestClassifier(),
+   "GradientBoosting": GradientBoostingClassifier(),
+   "LogisticRegression": LogisticRegression(max_iter=1000, solver="liblinear"),
 }
 
+
 param_grids = {
-    "RandomForest": {"n_estimators": [100, 200]},
-    "GradientBoosting": {"n_estimators": [100, 200]},
+   "RandomForest": {"n_estimators": [100, 200]},
+   "GradientBoosting": {"n_estimators": [100, 200]},
 }
+
 
 # =========================================================
 # TABS
@@ -569,17 +619,18 @@ param_grids = {
 
 
 tabs = st.tabs(
-    [
-        "Training",
-        "Governance",
-        "Bias",
-        "Stress Testing",
-        "Monitoring",
-        "Explainability",
-        "Registry",
-        "Audit Logs",
-    ]
+   [
+       "Training",
+       "Governance",
+       "Bias",
+       "Stress Testing",
+       "Monitoring",
+       "Explainability",
+       "Registry",
+       "Audit Logs",
+   ]
 )
+
 
 # =========================================================
 # TRAINING TAB
@@ -625,53 +676,62 @@ with tabs[0]:
 
 
 with tabs[1]:
-    st.subheader("📑 Model Governance Report")
+   st.subheader("📑 Model Governance Report")
 
-    if not st.session_state.training_done:
-        st.info("Train models first to generate governance reports.")
-    else:
-        model_name = st.selectbox(
-            "Select Model",
-            list(st.session_state.trained_models.keys()),
-            key="gov_model",
-        )
 
-        metrics = st.session_state.leaderboard.get(model_name, {})
+   if not st.session_state.training_done:
+       st.info("Train models first to generate governance reports.")
+   else:
+       model_name = st.selectbox(
+           "Select Model",
+           list(st.session_state.trained_models.keys()),
+           key="gov_model",
+       )
 
-        st.write("### Model Performance")
-        st.json(metrics)
 
-        report = {
-            "model_name": model_name,
-            "generated_at": datetime.datetime.utcnow().isoformat(),
-            "metrics": metrics,
-            "controls": {
-                "bias_testing": "completed",
-                "stress_testing": "completed",
-                "drift_monitoring": "active",
-                "registry_tracking": "enabled",
-            },
-        }
+       metrics = st.session_state.leaderboard.get(model_name, {})
 
-        st.download_button(
-            "Download Governance Report",
-            json.dumps(report, indent=2),
-            file_name="governance_report.json",
-        )
 
-        st.write("### Regulatory Framework")
-        st.info(jurisdiction)
+       st.write("### Model Performance")
+       st.json(metrics)
 
-        risk = 1 - metrics.get("accuracy", 0)
 
-        st.write("### Model Risk Rating")
+       report = {
+           "model_name": model_name,
+           "generated_at": datetime.datetime.utcnow().isoformat(),
+           "metrics": metrics,
+           "controls": {
+               "bias_testing": "completed",
+               "stress_testing": "completed",
+               "drift_monitoring": "active",
+               "registry_tracking": "enabled",
+           },
+       }
 
-        if risk < 0.1:
-            st.success("Low Model Risk")
-        elif risk < 0.25:
-            st.warning("Moderate Model Risk")
-        else:
-            st.error("High Model Risk")
+
+       st.download_button(
+           "Download Governance Report",
+           json.dumps(report, indent=2),
+           file_name="governance_report.json",
+       )
+
+
+       st.write("### Regulatory Framework")
+       st.info(jurisdiction)
+
+
+       risk = 1 - metrics.get("accuracy", 0)
+
+
+       st.write("### Model Risk Rating")
+
+
+       if risk < 0.1:
+           st.success("Low Model Risk")
+       elif risk < 0.25:
+           st.warning("Moderate Model Risk")
+       else:
+           st.error("High Model Risk")
 
 # =========================================================
 # BIAS TAB
@@ -695,33 +755,41 @@ with tabs[2]:
     else:
         st.info("Train models first.")
 
+  
 # =========================================================
 # STRESS TEST TAB
 # =========================================================
 
 
 with tabs[3]:
-    if st.session_state.training_done:
-        model_name = st.selectbox(
-            "Model",
-            list(st.session_state.trained_models.keys()),
-            key="stress_model",
-        )
+   if st.session_state.training_done:
+       model_name = st.selectbox(
+           "Model",
+           list(st.session_state.trained_models.keys()),
+           key="stress_model",
+       )
 
-        model = st.session_state.trained_models[model_name]
 
-        feature = st.selectbox("Feature", feature_names)
-        shock = st.slider("Shock %", -50, 50, 10) / 100
+       model = st.session_state.trained_models[model_name]
 
-        stressed = X_test.copy()
-        stressed[feature] *= (1 + shock)
 
-        preds = model.predict(stressed)
-        impact = float(np.mean(preds))
+       feature = st.selectbox("Feature", feature_names)
+       shock = st.slider("Shock %", -50, 50, 10) / 100
 
-        st.metric("Default Rate", f"{impact:.4f}")
 
-        log_prediction(model_name)
+       stressed = X_test.copy()
+       stressed[feature] *= (1 + shock)
+
+
+       preds = model.predict(stressed)
+       impact = float(np.mean(preds))
+
+
+       st.metric("Default Rate", f"{impact:.4f}")
+
+
+       log_prediction(model_name)
+
 
 # =========================================================
 # MONITORING TAB
@@ -729,20 +797,23 @@ with tabs[3]:
 
 
 with tabs[4]:
-    feature = st.selectbox("Feature", feature_names, key="monitor")
-    ks, p = ks_2samp(X_train[feature], X_test[feature])
-    w = wasserstein_distance(X_train[feature], X_test[feature])
+   feature = st.selectbox("Feature", feature_names, key="monitor")
+   ks, p = ks_2samp(X_train[feature], X_test[feature])
+   w = wasserstein_distance(X_train[feature], X_test[feature])
 
-    st.metric("KS p-value", f"{p:.5f}")
-    st.metric("Wasserstein", f"{w:.5f}")
 
-    log_drift_metrics(feature, X_train[feature], X_test[feature], w, "monitor")
+   st.metric("KS p-value", f"{p:.5f}")
+   st.metric("Wasserstein", f"{w:.5f}")
 
-    logs = load_json_lines(PREDICTION_DRIFT_LOG)
-    if logs:
-        df = pd.DataFrame(logs)
-        if "drift_score" in df.columns:
-            st.line_chart(df["drift_score"])
+
+   log_drift_metrics(feature, X_train[feature], X_test[feature], w, "monitor")
+
+
+   logs = load_json_lines(PREDICTION_DRIFT_LOG)
+   if logs:
+       df = pd.DataFrame(logs)
+       if "drift_score" in df.columns:
+           st.line_chart(df["drift_score"])
 
 # =========================================================
 # EXPLAINABILITY TAB (Fixed SHAP block)
@@ -814,14 +885,16 @@ with tabs[5]:
 
 
 with tabs[6]:
-    reg = load_registry()
-    if reg:
-        for r in reg:
-            r["hash"] = model_hash(r["path"])
+   reg = load_registry()
+   if reg:
+       for r in reg:
+           r["hash"] = model_hash(r["path"])
 
-        df_reg = pd.DataFrame(reg)
-        df_reg = df_reg.sort_values(["name", "version"])
-        st.dataframe(df_reg)
+
+       df_reg = pd.DataFrame(reg)
+       df_reg = df_reg.sort_values(["name", "version"])
+       st.dataframe(df_reg)
+
 
 # =========================================================
 # AUDIT LOGS TAB
@@ -829,9 +902,9 @@ with tabs[6]:
 
 
 with tabs[7]:
-    logs = load_json_lines(LOG_FILE)
-    if logs:
-        st.dataframe(pd.DataFrame(logs))
+   logs = load_json_lines(LOG_FILE)
+   if logs:
+       st.dataframe(pd.DataFrame(logs))
 
 
 # ============================
@@ -871,7 +944,6 @@ def governance_loss_v63(model, X, y, sensitive_idx=None):
 
     return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
 
-
 X_train = X_train.select_dtypes(include=[np.number]).fillna(0)
 y_train = y_train.fillna(0)
 sensitive_idx = None
@@ -894,6 +966,7 @@ for epoch in range(epochs):
         "fairness": fair_l,
         "drift": drift_l,
     })
+
     return model, history
 
 
@@ -902,15 +975,11 @@ def predict_jtyylsph_v63(model, X):
         X_tensor = torch.tensor(X.values.astype(np.float32))
         preds = model(X_tensor).squeeze().numpy()
         return (preds > 0.5).astype(int)
-
-
 # ============================
 # V6.3 GOVERNANCE MODEL (Torch)
 # ============================
 if TORCH_AVAILABLE_V63:
     st.subheader("🧠 V6.3 Governance Model (Experimental)")
-
-
     def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=5, device="cpu"):
         X_train = X_train.select_dtypes(include=[np.number]).fillna(0)
         y_train = y_train.fillna(0)
@@ -937,16 +1006,12 @@ if TORCH_AVAILABLE_V63:
             })
         # Return after loop
         return model, history
-
-
     def predict_jtyylsph_v63(model, X):
         model.eval()
         with torch.no_grad():
             X_tensor = torch.tensor(X.values.astype(np.float32)).to(next(model.parameters()).device)
             preds = model(X_tensor).squeeze().cpu().numpy()
             return (preds > 0.5).astype(int)
-
-
     # Train V6.3 Model Button
     if st.button("Train V6.3 Model"):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -971,8 +1036,6 @@ if TORCH_AVAILABLE_V63:
 else:
     st.info("PyTorch not available — V6.3 disabled")
     st.code("pip install torch")
-
-
 # =========================================================
 # HELPER
 # =========================================================
@@ -983,63 +1046,59 @@ def load_v63_model(input_dim):
         model.load_state_dict(torch.load(path, map_location="cpu"))
         model.eval()
     return model
-
-    history.append({
-        "epoch": epoch,
-        "loss": float(loss.item()),
-        "task": task_l,
-        "fairness": fair_l,
-        "drift": drift_l,
-    })
-
-
-return model, history
-
-
-# GPU-ready prediction function
-def predict_jtyylsph_v63(model, X):
-    with torch.no_grad():
-        X_tensor = torch.tensor(X.values.astype(np.float32)).to(next(model.parameters()).device)
-        preds = model(X_tensor).squeeze().cpu().numpy()
-        return (preds > 0.5).astype(int)
-
-
-# Train model
-model_v63, history_v63 = train_jtyylsph_v63(
-    X_np, y_np, sensitive_feature=X_np.columns[0], device=device
-)
-
-# Predictions and accuracy
-preds = predict_jtyylsph_v63(model_v63, X_np)
-acc = float((preds == y_np).mean())
-
-# Store in session
-st.session_state.trained_models["V63_Governance"] = model_v63
-st.session_state.leaderboard["V63_Governance"] = {"accuracy": acc}
-
-# Register model
-register_model(
-    "V63_Governance",
-    model_v63,
-    list(X_np.columns),
-    {"accuracy": acc}
-)
-
-# Display results
-st.write("### V6.3 Metrics")
-st.json({"accuracy": acc})
-
-st.write("### Training Dynamics")
-st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
-
-else:
-st.info("PyTorch not available — V6.3 disabled")
-st.code("pip install torch")
-
+# =========================================================
+# V6.3 EXECUTION BLOCK (CLEAN)
+# =========================================================
+try:
+    if TORCH_AVAILABLE_V63:
+        st.subheader("🧠 V6.3 Governance Model")
+        def predict_jtyylsph_v63(model, X):
+            model.eval()
+            with torch.no_grad():
+                X_tensor = torch.tensor(X.values.astype(np.float32)).to(
+                    next(model.parameters()).device
+                )
+                preds = model(X_tensor).squeeze().cpu().numpy()
+                return (preds > 0.5).astype(int)
+        if st.button("Train V6.3 Model"):
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model_v63, history_v63 = train_jtyylsph_v63(
+                X_train,
+                y_train,
+                sensitive_feature=X_train.columns[0],
+                epochs=5,
+                device=device
+            )
+            # Predictions
+            preds = predict_jtyylsph_v63(model_v63, X_train)
+            acc = float((preds == y_train).mean())
+            # Save model
+            save_path = os.path.join(MODEL_DIR, "model_v63.pth")
+            torch.save(model_v63.state_dict(), save_path)
+            # Store in session
+            st.session_state.trained_models["V63_Governance"] = model_v63
+            st.session_state.leaderboard["V63_Governance"] = {
+                "accuracy": acc
+            }
+            # Register model
+            register_model(
+                "V63_Governance",
+                model_v63,
+                list(X_train.columns),
+                {"accuracy": acc}
+            )
+            # UI Output
+            st.write("### V6.3 Metrics")
+            st.json({"accuracy": acc})
+            st.write("### Training Dynamics")
+            st.line_chart(
+                pd.DataFrame(history_v63).set_index("epoch")
+            )
+    else:
+        st.info("PyTorch not available — V6.3 disabled")
+        st.code("pip install torch")
 except Exception as e:
-st.warning("V6.3 module failed safely")
-st.text(str(e))
+    st.warning("V6.3 module failed safely")
+    st.text(str(e))
 
-torch.save(model.state_dict(), "model_v63.pth")
-model.load_state_dict(torch.load("model_v63.pth", map_location="cpu"))
 
