@@ -998,7 +998,7 @@ if TORCH_AVAILABLE_V63:
         X = X.to(device)
         y = y.to(device)
         preds = model(X)
-        # Task loss
+        # Task loss (binary cross-entropy)
         task_loss = nn.BCELoss()(preds, y)
         # Fairness penalty
         fairness_penalty = torch.tensor(0.0, device=device)
@@ -1029,28 +1029,25 @@ if TORCH_AVAILABLE_V63:
         sensitive_idx = None
         if sensitive_feature in X_train.columns:
             sensitive_idx = list(X_train.columns).index(sensitive_feature)
-history = []
-for epoch in range(epochs):
-    optimizer.zero_grad()
-    loss, task_l, fair_l, drift_l = governance_loss_v63(
-        model, X_tensor, y_tensor, sensitive_idx
-    )
-    loss.backward()
-    optimizer.step()
-    # append to history inside the loop
-    history.append({
-        "epoch": epoch,
-        "loss": float(loss.item()),
-        "task": task_l,
-        "fairness": fair_l,
-        "drift": drift_l,
-    })
-        # Save model
-        model_path = os.path.join(MODEL_DIR, "model_v63.pth")
-        torch.save(model.state_dict(), model_path)
+        history = []
+        for epoch in range(epochs):
+            optimizer.zero_grad()
+            loss, task_l, fair_l, drift_l = governance_loss_v63(
+                model, X_tensor, y_tensor, sensitive_idx
+            )
+            loss.backward()
+            optimizer.step()
+            history.append({
+                "epoch": epoch,
+                "loss": float(loss.item()),
+                "task": task_l,
+                "fairness": fair_l,
+                "drift": drift_l,
+            })
+        # Return after loop completes
         return model, history
     # -----------------------------
-    # GPU-ready Prediction
+    # GPU-ready Prediction Function
     # -----------------------------
     def predict_jtyylsph_v63(model, X):
         model.eval()
@@ -1075,7 +1072,10 @@ for epoch in range(epochs):
         with st.spinner("Training V6.3 Governance Model..."):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             st.write(f"Training on device: {device}")
-            X_np = X_train.select_dtypes(include=[np.number]).fillna(0).sample(min(len(X_train), 500), random_state=42)
+            # Take up to 500 numeric samples to avoid UI freeze
+            X_np = X_train.select_dtypes(include=[np.number]).fillna(0).sample(
+                min(len(X_train), 500), random_state=42
+            )
             y_np = y_train.loc[X_np.index].fillna(0)
             model_v63, history_v63 = train_jtyylsph_v63(
                 X_np, y_np, sensitive_feature=X_np.columns[0], epochs=5, device=device
@@ -1084,11 +1084,17 @@ for epoch in range(epochs):
             acc = float((preds == y_np).mean())
             st.session_state.trained_models["V63_Governance"] = model_v63
             st.session_state.leaderboard["V63_Governance"] = {"accuracy": acc}
-            register_model("V63_Governance", model_v63, list(X_np.columns), {"accuracy": acc})
+            register_model(
+                "V63_Governance",
+                model_v63,
+                list(X_np.columns),
+                {"accuracy": acc}
+            )
             st.write("### V6.3 Metrics")
             st.json({"accuracy": acc})
             st.write("### Training Dynamics")
             st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
+    # Load pre-trained model if exists
     elif os.path.exists(os.path.join(MODEL_DIR, "model_v63.pth")):
         model_v63_loaded = load_v63_model(X_train.shape[1])
         st.session_state.trained_models["V63_Governance"] = model_v63_loaded
