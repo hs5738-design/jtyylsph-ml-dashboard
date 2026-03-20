@@ -815,107 +815,69 @@ with tabs[4]:
        if "drift_score" in df.columns:
            st.line_chart(df["drift_score"])
 
-
 # =========================================================
-# EXPLAINABILITY TAB
+# EXPLAINABILITY TAB (Fixed SHAP block)
 # =========================================================
-
-
 with tabs[5]:
-   if not st.session_state.training_done:
-       st.info("Train models first to view explainability.")
-   else:
-       model_name = st.selectbox(
-           "Explain Model",
-           list(st.session_state.trained_models.keys()),
-           key="exp",
-       )
-
-
-       model = st.session_state.trained_models[model_name]
-
-
-       st.write("### Global Importance (Model Native)")
-
-
-       if hasattr(model, "feature_importances_"):
-           safe_barh(
-               feature_names[:len(model.feature_importances_)],
-               model.feature_importances_,
-               "Feature Importance",
-           )
-
-
-       elif hasattr(model, "coef_"):
-           coefs = np.abs(model.coef_[0])
-           safe_barh(
-               feature_names[:len(coefs)],
-               coefs,
-               "Model Coefficients",
-           )
-       else:
-           st.info("Model does not expose feature importances.")
-
-
-       # SHAP
-       if SHAP_AVAILABLE:
-           st.write("### SHAP Global Explanation")
-
-
-           try:
-               X_base = X_test.copy()
-               X_base = X_base.select_dtypes(include=[np.number])
-
-
-               expected = getattr(model, "feature_names_in_", None)
-
-
-               if expected is not None:
-                   X_fixed = X_base.copy()
-                   for col in expected:
-                       if col not in X_fixed.columns:
-                           X_fixed[col] = 0
-                   X_shap = X_fixed[list(expected)].iloc[:100]
-               else:
-                   X_shap = X_base.iloc[:100]
-
-
-               X_shap = X_shap.replace([np.inf, -np.inf], np.nan).fillna(0) 
-               X_shap = X_shap.sample(min(len(X_shap), 100), random_state=42)
-               if hasattr(model, "predict_proba"):
-                   explainer = shap.Explainer(model, X_train, feature_names=feature_names)
-               else:
-                   if SHAP_AVAILABLE and len(X_train) < 1000:
-
-               shap_values = explainer(X_shap)
-
-
-               fig = plt.figure()
-               shap.summary_plot(shap_values, X_shap, show=False)
-               st.pyplot(fig)
-               plt.close(fig)
-
-
-               st.write("### SHAP Local Explanation (Single Instance)")
-               idx = st.slider(
-                   "Instance index", 0, len(X_shap) - 1, 0
-               )
-
-
-               fig2 = plt.figure()
-               shap.waterfall_plot(shap_values[idx], show=False)
-               st.pyplot(fig2)
-               plt.close(fig2)
-
-
-           except Exception as e:
-               st.warning("SHAP explanation failed safely.")
-               st.text(str(e))
-
-
-       else:
-           st.info("SHAP is not installed; native explainability only.")
-
+    if not st.session_state.training_done:
+        st.info("Train models first to view explainability.")
+    else:
+        model_name = st.selectbox(
+            "Explain Model",
+            list(st.session_state.trained_models.keys()),
+            key="exp",
+        )
+        model = st.session_state.trained_models[model_name]
+        st.write("### Global Importance (Model Native)")
+        # Native feature importance
+        if hasattr(model, "feature_importances_"):
+            safe_barh(
+                feature_names[:len(model.feature_importances_)],
+                model.feature_importances_,
+                "Feature Importance",
+            )
+        elif hasattr(model, "coef_"):
+            coefs = np.abs(model.coef_[0])
+            safe_barh(
+                feature_names[:len(coefs)],
+                coefs,
+                "Model Coefficients",
+            )
+        else:
+            st.info("Model does not expose feature importances.")
+        # SHAP explanations
+        if SHAP_AVAILABLE:
+            st.write("### SHAP Global Explanation")
+            try:
+                # Use only numeric columns
+                X_base = X_test.select_dtypes(include=[np.number]).copy()
+                X_base = X_base.replace([np.inf, -np.inf], np.nan).fillna(0)
+                # Take up to 100 samples to avoid UI freeze
+                X_shap = X_base.sample(min(len(X_base), 100), random_state=42)
+                # Create explainer if model supports predict_proba
+                if hasattr(model, "predict_proba"):
+                    explainer = shap.Explainer(model, X_train, feature_names=feature_names)
+                else:
+                    # fallback: SHAP supports model directly for small numeric dataset
+                    explainer = shap.Explainer(model, X_shap, feature_names=feature_names)
+                shap_values = explainer(X_shap)
+                # Global summary plot
+                fig = plt.figure()
+                shap.summary_plot(shap_values, X_shap, show=False)
+                st.pyplot(fig)
+                plt.close(fig)
+                # Local explanation
+                st.write("### SHAP Local Explanation (Single Instance)")
+                idx = st.slider("Instance index", 0, len(X_shap) - 1, 0)
+                fig2 = plt.figure()
+                shap.waterfall_plot(shap_values[idx], show=False)
+                st.pyplot(fig2)
+                plt.close(fig2)
+            except Exception as e:
+                st.warning("SHAP explanation failed safely.")
+                st.text(str(e))
+        else:
+            st.info("SHAP is not installed; native explainability only.")
 
 # =========================================================
 # REGISTRY TAB
