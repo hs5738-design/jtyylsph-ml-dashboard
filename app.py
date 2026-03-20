@@ -950,25 +950,22 @@ sensitive_idx = None
 if sensitive_feature in X_train.columns:
     sensitive_idx = list(X_train.columns).index(sensitive_feature)
 
-    history = []
-
-    for epoch in range(epochs):
-        optimizer.zero_grad()
-
-        loss, task_l, fair_l, drift_l = governance_loss_v63(
-            model, X_tensor, y_tensor, sensitive_idx
-        )
-
-        loss.backward()
-        optimizer.step()
-
-        history.append({
-            "epoch": epoch,
-            "loss": float(loss.item()),
-            "task": task_l,
-            "fairness": fair_l,
-            "drift": drift_l,
-        })
+history = []
+for epoch in range(epochs):
+    optimizer.zero_grad()
+    loss, task_l, fair_l, drift_l = governance_loss_v63(
+        model, X_tensor, y_tensor, sensitive_idx
+    )
+    loss.backward()
+    optimizer.step()
+    # append to history inside the loop
+    history.append({
+        "epoch": epoch,
+        "loss": float(loss.item()),
+        "task": task_l,
+        "fairness": fair_l,
+        "drift": drift_l,
+    })
 
     return model, history
 
@@ -1032,21 +1029,22 @@ if TORCH_AVAILABLE_V63:
         sensitive_idx = None
         if sensitive_feature in X_train.columns:
             sensitive_idx = list(X_train.columns).index(sensitive_feature)
-        history = []
-        for epoch in range(epochs):
-            optimizer.zero_grad()
-            loss, task_l, fair_l, drift_l = governance_loss_v63(
-                model, X_tensor, y_tensor, sensitive_idx
-            )
-            loss.backward()
-            optimizer.step()
-            history.append({
-                "epoch": epoch,
-                "loss": float(loss.item()),
-                "task": task_l,
-                "fairness": fair_l,
-                "drift": drift_l,
-            })
+history = []
+for epoch in range(epochs):
+    optimizer.zero_grad()
+    loss, task_l, fair_l, drift_l = governance_loss_v63(
+        model, X_tensor, y_tensor, sensitive_idx
+    )
+    loss.backward()
+    optimizer.step()
+    # append to history inside the loop
+    history.append({
+        "epoch": epoch,
+        "loss": float(loss.item()),
+        "task": task_l,
+        "fairness": fair_l,
+        "drift": drift_l,
+    })
         # Save model
         model_path = os.path.join(MODEL_DIR, "model_v63.pth")
         torch.save(model.state_dict(), model_path)
