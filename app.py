@@ -994,60 +994,79 @@ if TORCH_AVAILABLE_V63:
             self.linear = nn.Linear(input_dim, 1)
         def forward(self, x):
             return torch.sigmoid(self.linear(x))
-    # -----------------------------
-    # Governance Loss
-    # -----------------------------
-    def governance_loss_v63(model, X, y, sensitive_idx=None):
-        device = next(model.parameters()).device
-        X = X.to(device)
-        y = y.to(device)
-        preds = model(X)
-        # Task loss
-        task_loss = nn.BCELoss()(preds, y)
-        # Fairness penalty
-        fairness_penalty = torch.tensor(0.0, device=device)
-        if sensitive_idx is not None:
-            s = X[:, sensitive_idx]
-            thr = torch.median(s)
-            g0 = preds[s <= thr]
-            g1 = preds[s > thr]
-            if len(g0) > 0 and len(g1) > 0:
-                fairness_penalty = torch.abs(g0.mean() - g1.mean())
-        # Drift penalty
-        drift_penalty = torch.abs(preds.mean() - y.mean())
-        # Weighted sum
-        lambda_fair = 0.1
-        lambda_drift = torch.clamp(drift_penalty * 2, 0, 1)
-        loss = task_loss + lambda_fair * fairness_penalty + lambda_drift * drift_penalty
-        return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
-    # -----------------------------
-    # Training Function
-    # -----------------------------
-    def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=5, device="cpu"):
-        model = JTYYLSPHModel_V63(X_train.shape[1]).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=0.01)
-        X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
-        y_tensor = torch.tensor(y_train.values.astype(np.float32)).unsqueeze(1).to(device)
-        sensitive_idx = None
-        if sensitive_feature in X_train.columns:
-            sensitive_idx = list(X_train.columns).index(sensitive_feature)
-        history = []
-        for epoch in range(epochs):
-            optimizer.zero_grad()
-            loss, task_l, fair_l, drift_l = governance_loss_v63(model, X_tensor, y_tensor, sensitive_idx)
-            loss.backward()
-            optimizer.step()
-            history.append({
-                "epoch": epoch,
-                "loss": float(loss.item()),
-                "task": task_l,
-                "fairness": fair_l,
-                "drift": drift_l,
-            })
-        # Save automatically
-        model_path = os.path.join(MODEL_DIR, "model_v63.pth")
-        torch.save(model.state_dict(), model_path)
-        return model, history
+# =========================================================
+# V6.3 Governance Loss & Training (Fixed Indentation)
+# =========================================================
+def governance_loss_v63(model, X, y, sensitive_idx=None):
+    """
+    Computes task loss + fairness penalty + drift penalty
+    Fully GPU/CPU device-aware
+    """
+    device = next(model.parameters()).device  # detect model device
+    preds = model(X.to(device))  # ensure input on same device as model
+    y = y.to(device)
+    # Task loss (binary cross-entropy)
+    task_loss = nn.BCELoss()(preds, y)
+    # Fairness penalty
+    fairness_penalty = torch.tensor(0.0, device=device)
+    if sensitive_idx is not None:
+        s = X[:, sensitive_idx]
+        thr = torch.median(s)
+        g0 = preds[s <= thr]
+        g1 = preds[s > thr]
+        if len(g0) > 0 and len(g1) > 0:
+            fairness_penalty = torch.abs(g0.mean() - g1.mean())
+    # Drift penalty
+    drift_penalty = torch.abs(preds.mean() - y.mean())
+    # Weighted sum
+    lambda_fair = 0.1
+    lambda_drift = torch.clamp(drift_penalty * 2, 0, 1)
+    loss = task_loss + lambda_fair * fairness_penalty + lambda_drift * drift_penalty
+    return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
+def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=5, device="cpu"):
+    """
+    Train V6.3 governance model with optional fairness-aware loss.
+    """
+    # Ensure numeric tensors
+    X_train = X_train.select_dtypes(include=[np.number]).fillna(0)
+    y_train = y_train.fillna(0)
+    # Initialize model and optimizer
+    model = JTYYLSPHModel_V63(X_train.shape[1]).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
+    y_tensor = torch.tensor(y_train.values.astype(np.float32)).unsqueeze(1).to(device)
+    # Sensitive feature index
+    sensitive_idx = None
+    if sensitive_feature in X_train.columns:
+        sensitive_idx = list(X_train.columns).index(sensitive_feature)
+    history = []
+    for epoch in range(epochs):
+        optimizer.zero_grad()
+        loss, task_l, fair_l, drift_l = governance_loss_v63(
+            model, X_tensor, y_tensor, sensitive_idx
+        )
+        loss.backward()
+        optimizer.step()
+        history.append({
+            "epoch": epoch,
+            "loss": float(loss.item()),
+            "task": task_l,
+            "fairness": fair_l,
+            "drift": drift_l,
+        })
+    # Save model automatically
+    model_path = os.path.join(MODEL_DIR, "model_v63.pth")
+    torch.save(model.state_dict(), model_path)
+    return model, history
+def predict_jtyylsph_v63(model, X):
+    """
+    GPU/CPU ready prediction for V6.3 model
+    """
+    model.eval()
+    with torch.no_grad():
+        X_tensor = torch.tensor(X.values.astype(np.float32)).to(next(model.parameters()).device)
+        preds = model(X_tensor).squeeze().cpu().numpy()
+        return (preds > 0.5).astype(int)
     # -----------------------------
     # Load Function
     # -----------------------------
