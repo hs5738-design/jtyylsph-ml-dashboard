@@ -1024,18 +1024,14 @@ def governance_loss_v63(model, X, y, sensitive_idx=None):
     loss = task_loss + lambda_fair * fairness_penalty + lambda_drift * drift_penalty
     return loss, task_loss.item(), fairness_penalty.item(), drift_penalty.item()
 def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=5, device="cpu"):
-    """
-    Train V6.3 governance model with optional fairness-aware loss.
-    """
-    # Ensure numeric tensors
+    # ✅ All preprocessing inside function
     X_train = X_train.select_dtypes(include=[np.number]).fillna(0)
     y_train = y_train.fillna(0)
-    # Initialize model and optimizer
     model = JTYYLSPHModel_V63(X_train.shape[1]).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
     y_tensor = torch.tensor(y_train.values.astype(np.float32)).unsqueeze(1).to(device)
-    # Sensitive feature index
+    # Sensitive feature index, only if it exists
     sensitive_idx = None
     if sensitive_feature in X_train.columns:
         sensitive_idx = list(X_train.columns).index(sensitive_feature)
@@ -1054,10 +1050,11 @@ def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=5, devic
             "fairness": fair_l,
             "drift": drift_l,
         })
-    # Save model automatically
+    # Save model
     model_path = os.path.join(MODEL_DIR, "model_v63.pth")
     torch.save(model.state_dict(), model_path)
     return model, history
+
 def predict_jtyylsph_v63(model, X):
     """
     GPU/CPU ready prediction for V6.3 model
