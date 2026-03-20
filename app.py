@@ -738,43 +738,29 @@ with tabs[1]:
        else:
            st.error("High Model Risk")
 
-
 # =========================================================
 # BIAS TAB
 # =========================================================
-
-
 with tabs[2]:
-   if st.session_state.training_done:
-available_models = [
-    name for name, m in st.session_state.trained_models.items()
-    if hasattr(m, "predict")
-]
+    if st.session_state.training_done:
+        available_models = [
+            name for name, m in st.session_state.trained_models.items()
+            if hasattr(m, "predict")
+        ]
+        if available_models:
+            model_name = st.selectbox("Model", available_models, key="bias_model")
+            sensitive = st.selectbox("Sensitive Feature", ["None"] + feature_names)
+            if sensitive == "None":
+                sensitive = None
+            model = st.session_state.trained_models[model_name]
+            results = fairness_analysis(model, X_test, y_test, sensitive)
+            st.json(results)
+        else:
+            st.info("No sklearn-compatible models available for bias analysis.")
+    else:
+        st.info("Train models first.")
 
-if available_models:
-    model_name = st.selectbox("Model", available_models, key="bias_model")
-    sensitive = st.selectbox("Sensitive Feature", ["None"] + feature_names)
-    if sensitive == "None":
-        sensitive = None
-
-    model = st.session_state.trained_models[model_name]
-    results = fairness_analysis(model, X_test, y_test, sensitive)
-    st.json(results)
-else:
-    st.info("No sklearn-compatible models available for bias analysis.")
-
-
-
-       sensitive = st.selectbox("Sensitive Feature", ["None"] + feature_names)
-       if sensitive == "None":
-           sensitive = None
-
-
-       model = st.session_state.trained_models[model_name]
-       results = fairness_analysis(model, X_test, y_test, sensitive)
-       st.json(results)
-
-
+  
 # =========================================================
 # STRESS TEST TAB
 # =========================================================
