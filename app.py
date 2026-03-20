@@ -147,11 +147,9 @@ def load_registry():
 def save_registry(reg):
     with open(MODEL_REGISTRY, "w") as f:
         json.dump(reg, f, indent=2)
-
-
 def register_model(name, model, feature_names, metrics):
     registry = load_registry()
-
+    # Determine next version
     versions = []
     for r in registry:
         if r.get("name") == name:
@@ -159,21 +157,19 @@ def register_model(name, model, feature_names, metrics):
                 versions.append(int(r.get("version", 0)))
             except:
                 pass
-
     version = max(versions) + 1 if versions else 1
-is_torch = hasattr(model, "state_dict")
-if is_torch:
-    model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pt")
-    torch.save(model.state_dict(), model_path)
-else:
-    model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pkl")
+    is_torch = hasattr(model, "state_dict")
+    if is_torch:
+        model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pt")
+        torch.save(model.state_dict(), model_path)
+    else:
+        model_path = os.path.join(MODEL_DIR, f"{name}_v{version}.pkl")
         artifact = {
             "model": model,
             "feature_names": feature_names,
             "metrics": metrics,
         }
         joblib.dump(artifact, model_path)
-
     record = {
         "name": name,
         "version": version,
@@ -183,10 +179,8 @@ else:
         "time": datetime.datetime.utcnow().isoformat(),
         "type": "torch" if is_torch else "sklearn"
     }
-
     registry.append(record)
     save_registry(registry)
-
 
 def load_models_from_registry():
     registry = load_registry()
