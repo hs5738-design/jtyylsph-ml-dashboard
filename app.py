@@ -635,43 +635,49 @@ tabs = st.tabs(
 # =========================================================
 # TRAINING TAB
 # =========================================================
-
 with tabs[0]:
-    if st.button("Train Standard Models", key="train_standard_models") or not st.session_state.training_done:
-        st.session_state.leaderboard = {}
+    try:
+        if st.button("Train Standard Models", key="train_standard_models"):
+            st.session_state.leaderboard = {}
 
-        for name, model in models.items():
-            if name in param_grids:
-                grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=-1)
-                grid.fit(X_train, y_train)
-                model = grid.best_estimator_
-            else:
-                model.fit(X_train, y_train)
+            X_train_safe = X_train.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).fillna(0)
+            X_test_safe = X_test.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).fillna(0)
+            y_train_safe = pd.Series(y_train).fillna(0)
+            y_test_safe = pd.Series(y_test).fillna(0)
 
-            preds = model.predict(X_test)
+            for name, model in models.items():
+                if name in param_grids:
+                    grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=-1)
+                    grid.fit(X_train_safe, y_train_safe)
+                    model = grid.best_estimator_
+                else:
+                    model.fit(X_train_safe, y_train_safe)
 
-            metrics = {
-                "accuracy": accuracy_score(y_test, preds),
-                "precision": precision_score(y_test, preds, average="weighted", zero_division=0),
-                "recall": recall_score(y_test, preds, average="weighted", zero_division=0),
-                "f1": f1_score(y_test, preds, average="weighted", zero_division=0),
-            }
+                preds = model.predict(X_test_safe)
 
-            st.session_state.trained_models[name] = model
-            st.session_state.leaderboard[name] = metrics
-            register_model(name, model, feature_names, metrics)
+                metrics = {
+                    "accuracy": accuracy_score(y_test_safe, preds),
+                    "precision": precision_score(y_test_safe, preds, average="weighted", zero_division=0),
+                    "recall": recall_score(y_test_safe, preds, average="weighted", zero_division=0),
+                    "f1": f1_score(y_test_safe, preds, average="weighted", zero_division=0),
+                }
 
-        st.session_state.training_done = True
-        st.success("Training Complete")
+                st.session_state.trained_models[name] = model
+                st.session_state.leaderboard[name] = metrics
+                register_model(name, model, list(X_train_safe.columns), metrics)
 
-    # ✅ SAFE INDENT BLOCK
-    if len(st.session_state.leaderboard) > 0:
-        df_lb = pd.DataFrame(st.session_state.leaderboard).T
-        df_lb = df_lb.sort_values("accuracy", ascending=False)
-        st.dataframe(df_lb)
-except Exception as e:
-    st.error("Training failed")
-    st.exception(e)
+            st.session_state.training_done = True
+            st.success("Training Complete")
+
+        if len(st.session_state.leaderboard) > 0:
+            df_lb = pd.DataFrame(st.session_state.leaderboard).T
+            if "accuracy" in df_lb.columns:
+                df_lb = df_lb.sort_values("accuracy", ascending=False)
+            st.dataframe(df_lb)
+
+    except Exception as e:
+        st.error("Training failed")
+        st.exception(e)
 
 # =========================================================
 # GOVERNANCE TAB
