@@ -1028,8 +1028,7 @@ if TORCH_AVAILABLE_V63:
             preds = model(X_tensor).squeeze().cpu().numpy()
             return (preds > 0.5).astype(int)
     # Train V6.3 Model Button
-    if st.button("Train V6.3 Model"):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_v63, history_v63 = train_jtyylsph_v63(
             X_train, y_train,
             sensitive_feature=X_train.columns[0],
