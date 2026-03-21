@@ -645,14 +645,17 @@ with tabs[0]:
             y_train_safe = pd.Series(y_train).fillna(0)
             y_test_safe = pd.Series(y_test).fillna(0)
 
-            for name, model in models.items():
-                if name in param_grids:
-                    grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=-1)
-                    grid.fit(X_train_safe, y_train_safe)
-                    model = grid.best_estimator_
-                else:
-                    model.fit(X_train_safe, y_train_safe)
-
+for name, model in models.items():
+    try:
+        if name in param_grids:
+            grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=1)
+            grid.fit(X_train_safe, y_train_safe)
+            model = grid.best_estimator_
+        else:
+            model.fit(X_train_safe, y_train_safe)
+    except Exception as e:
+        st.error(f"{name} failed: {e}")
+        continue
                 preds = model.predict(X_test_safe)
 
                 metrics = {
@@ -994,63 +997,36 @@ def predict_jtyylsph_v63(model, X):
 # V6.3 GOVERNANCE MODEL (Torch)
 # ============================
 if TORCH_AVAILABLE_V63:
-    st.subheader("🧠 V6.3 Governance Model (Experimental)")
-    def train_jtyylsph_v63(X_train, y_train, sensitive_feature=None, epochs=5, device="cpu"):
-        X_train = X_train.select_dtypes(include=[np.number]).fillna(0)
-        y_train = y_train.fillna(0)
-        model = JTYYLSPHModel_V63(X_train.shape[1]).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=0.01)
-        X_tensor = torch.tensor(X_train.values.astype(np.float32)).to(device)
-        y_tensor = torch.tensor(y_train.values.astype(np.float32)).unsqueeze(1).to(device)
-        sensitive_idx = None
-        if sensitive_feature in X_train.columns:
-            sensitive_idx = list(X_train.columns).index(sensitive_feature)
-        history = []
-        for epoch in range(epochs):
-            optimizer.zero_grad()
-            loss, task_l, fair_l, drift_l = governance_loss_v63(model, X_tensor, y_tensor, sensitive_idx)
-            loss.backward()
-            optimizer.step()
-            # Append metrics to history
-            history.append({
-                "epoch": epoch,
-                "loss": float(loss.item()),
-                "task": task_l,
-                "fairness": fair_l,
-                "drift": drift_l
-            })
-        # Return after loop
-        return model, history
-    def predict_jtyylsph_v63(model, X):
-        model.eval()
-        with torch.no_grad():
-            X_tensor = torch.tensor(X.values.astype(np.float32)).to(next(model.parameters()).device)
-            preds = model(X_tensor).squeeze().cpu().numpy()
-            return (preds > 0.5).astype(int)
-    # Train V6.3 Model Button
-        if st.button("Train V6.3 Model"):
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    st.subheader("🧠 V6.3 Governance Model")
+    if st.button("Train V6.3 Model", key="v63_train"):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_v63, history_v63 = train_jtyylsph_v63(
-            X_train, y_train,
+            X_train,
+            y_train,
             sensitive_feature=X_train.columns[0],
             epochs=5,
             device=device
         )
         preds = predict_jtyylsph_v63(model_v63, X_train)
         acc = float((preds == y_train).mean())
-        # Save to session state
+        # Save model
+        save_path = os.path.join(MODEL_DIR, "model_v63.pth")
+        torch.save(model_v63.state_dict(), save_path)
+        # Store
         st.session_state.trained_models["V63_Governance"] = model_v63
         st.session_state.leaderboard["V63_Governance"] = {"accuracy": acc}
-        # Optionally register model
-        register_model("V63_Governance", model_v63, list(X_train.columns), {"accuracy": acc})
-        # Display training metrics
-        st.write("### Training History")
-        st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
-        st.write("### Accuracy")
+        register_model(
+            "V63_Governance",
+            model_v63,
+            list(X_train.columns),
+            {"accuracy": acc}
+        )
+        st.write("### V6.3 Metrics")
         st.metric("Training Accuracy", f"{acc:.4f}")
+        st.write("### Training Dynamics")
+        st.line_chart(pd.DataFrame(history_v63).set_index("epoch"))
 else:
     st.info("PyTorch not available — V6.3 disabled")
-    st.code("pip install torch")
 # =========================================================
 # HELPER
 # =========================================================
@@ -1075,7 +1051,7 @@ try:
                 )
                 preds = model(X_tensor).squeeze().cpu().numpy()
                 return (preds > 0.5).astype(int)
-        if st.button("Train V6.3 Model"):
+        if st.button("Train V6.3 Model", key="v63_train_secondary"):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model_v63, history_v63 = train_jtyylsph_v63(
                 X_train,
