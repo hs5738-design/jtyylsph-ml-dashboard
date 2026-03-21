@@ -669,6 +669,9 @@ with tabs[0]:
         df_lb = pd.DataFrame(st.session_state.leaderboard).T
         df_lb = df_lb.sort_values("accuracy", ascending=False)
         st.dataframe(df_lb)
+except Exception as e:
+    st.error("Training failed")
+    st.exception(e)
 
 # =========================================================
 # GOVERNANCE TAB
