@@ -639,45 +639,38 @@ with tabs[0]:
     try:
         if st.button("Train Standard Models", key="train_standard_models"):
             st.session_state.leaderboard = {}
-
             X_train_safe = X_train.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).fillna(0)
             X_test_safe = X_test.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).fillna(0)
             y_train_safe = pd.Series(y_train).fillna(0)
             y_test_safe = pd.Series(y_test).fillna(0)
-
-for name, model in models.items():
-    try:
-        if name in param_grids:
-            grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=1)
-            grid.fit(X_train_safe, y_train_safe)
-            model = grid.best_estimator_
-        else:
-            model.fit(X_train_safe, y_train_safe)
-    except Exception as e:
-        st.error(f"{name} failed: {e}")
-        continue
+            for name, model in models.items():
+                try:
+                    if name in param_grids:
+                        grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=1)
+                        grid.fit(X_train_safe, y_train_safe)
+                        model = grid.best_estimator_
+                    else:
+                        model.fit(X_train_safe, y_train_safe)
+                except Exception as e:
+                    st.error(f"{name} failed: {e}")
+                    continue
                 preds = model.predict(X_test_safe)
-
                 metrics = {
                     "accuracy": accuracy_score(y_test_safe, preds),
                     "precision": precision_score(y_test_safe, preds, average="weighted", zero_division=0),
                     "recall": recall_score(y_test_safe, preds, average="weighted", zero_division=0),
                     "f1": f1_score(y_test_safe, preds, average="weighted", zero_division=0),
                 }
-
                 st.session_state.trained_models[name] = model
                 st.session_state.leaderboard[name] = metrics
                 register_model(name, model, list(X_train_safe.columns), metrics)
-
             st.session_state.training_done = True
             st.success("Training Complete")
-
         if len(st.session_state.leaderboard) > 0:
             df_lb = pd.DataFrame(st.session_state.leaderboard).T
             if "accuracy" in df_lb.columns:
                 df_lb = df_lb.sort_values("accuracy", ascending=False)
             st.dataframe(df_lb)
-
     except Exception as e:
         st.error("Training failed")
         st.exception(e)
