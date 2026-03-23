@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore")
 # =========================================================
 # JTYYLSPH V6.3 PRO MAX — ENTERPRISE AI PLATFORM
 # Production • Persistent Models • Registry • Explainability
@@ -35,7 +37,7 @@ from sklearn.metrics import (
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from scipy.stats import wasserstein_distance, ks_2samp
-
+from sklearn.pipeline import Pipeline
 
 # =========================================================
 # OPTIONAL LIBRARIES
@@ -235,7 +237,7 @@ def cached_registry():
 def fairness_analysis(model, X, y, sensitive_feature=None):
 
 
-   preds = model.predict(X)
+   preds = model.predict(X_test_safe)
    base_acc = accuracy_score(y, preds)
 
 
@@ -246,10 +248,11 @@ def fairness_analysis(model, X, y, sensitive_feature=None):
        results["note"] = "No sensitive feature selected"
        return results
 
-
-   groups = X[sensitive_feature]
-   group_metrics = {}
-
+if sensitive_feature not in X.columns:
+    results["error"] = "Invalid sensitive feature"
+    return results
+groups = X[sensitive_feature]
+group_metrics = {}
 
    for g in groups.unique():
        mask = (groups == g)
@@ -432,12 +435,12 @@ if "feature_names" not in st.session_state:
 
 
 if not st.session_state.trained_models:
-   loaded = cached_registry()
-   for name, artifact in loaded.items():
-       st.session_state.trained_models[name] = artifact["model"]
-       st.session_state.leaderboard[name] = artifact.get("metrics", {})
-   st.session_state.training_done = bool(st.session_state.trained_models)
-
+    loaded = cached_registry()
+    for name, artifact in loaded.items():
+        st.session_state.trained_models[name] = artifact["model"]
+for name, artifact in loaded.items():
+    st.session_state.trained_models[name] = artifact["model"]
+    st.session_state.leaderboard[name] = artifact.get("metrics", {})
 
 # =========================================================
 # UI
@@ -531,10 +534,9 @@ query = st.sidebar.text_area(
 )
 
 if query:
-    if "drop" in query.lower() or "delete" in query.lower():
-        st.error("Unsafe query blocked")
+    if not query.strip().lower().startswith("select"):
+        st.error("Only SELECT queries allowed")
         st.stop()
-
 # FILE INGESTION
 elif uploaded_files:
    dataframes = []
@@ -631,6 +633,51 @@ tabs = st.tabs(
    ]
 )
 
+def compute_model_health(metrics):
+    """
+    Returns a health score (0–100) based on model metrics
+    """
+    try:
+        acc = metrics.get("accuracy", 0)
+        f1 = metrics.get("f1", 0)
+        # Penalize imbalance between precision & recall
+        precision = metrics.get("precision", 0)
+        recall = metrics.get("recall", 0)
+        balance_penalty = abs(precision - recall) / max(precision + recall, 1e-6)
+        score = (
+            0.5 * acc +
+            0.3 * f1 +
+            0.2 * (1 - balance_penalty)
+        )
+        return round(score * 100, 2)
+    except:
+        return 0
+def safe_train_model(name, model, X_train, y_train, param_grids):
+    """
+    Tries GridSearch → fallback to default model → fallback to dummy
+    """
+    try:
+        # Try GridSearch first
+        if name in param_grids:
+            grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=1)
+            grid.fit(X_train, y_train)
+            return grid.best_estimator_, "gridsearch"
+        # Otherwise normal fit
+        model.fit(X_train, y_train)
+        return model, "normal"
+    except Exception as e:
+        st.warning(f"{name} GridSearch failed → fallback to default. Error: {e}")
+        try:
+            # Retry simple model
+            model.fit(X_train, y_train)
+            return model, "fallback_simple"
+        except Exception as e2:
+            st.error(f"{name} completely failed: {e2}")
+            # FINAL fallback → dummy model
+            from sklearn.dummy import DummyClassifier
+            dummy = DummyClassifier(strategy="most_frequent")
+            dummy.fit(X_train, y_train)
+            return dummy, "dummy"
 
 # =========================================================
 # TRAINING TAB
@@ -643,33 +690,40 @@ with tabs[0]:
             X_test_safe = X_test.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).fillna(0)
             y_train_safe = pd.Series(y_train).fillna(0)
             y_test_safe = pd.Series(y_test).fillna(0)
-            for name, model in models.items():
-                try:
-                    if name in param_grids:
-                        grid = GridSearchCV(model, param_grids[name], cv=3, n_jobs=1)
-                        grid.fit(X_train_safe, y_train_safe)
-                        model = grid.best_estimator_
-                    else:
-                        model.fit(X_train_safe, y_train_safe)
-                except Exception as e:
-                    st.error(f"{name} failed: {e}")
-                    continue
-                preds = model.predict(X_test_safe)
-                metrics = {
-                    "accuracy": accuracy_score(y_test_safe, preds),
-                    "precision": precision_score(y_test_safe, preds, average="weighted", zero_division=0),
-                    "recall": recall_score(y_test_safe, preds, average="weighted", zero_division=0),
-                    "f1": f1_score(y_test_safe, preds, average="weighted", zero_division=0),
-                }
-                st.session_state.trained_models[name] = model
-                st.session_state.leaderboard[name] = metrics
-                register_model(name, model, list(X_train_safe.columns), metrics)
+            for name, model in models.items(): model, mode = safe_train_model(name, model, X_train_safe, y_train_safe, param_grids)
+    try:
+        preds = model.predict(X_test_safe)
+    except Exception as e:
+        st.error(f"{name} prediction failed: {e}")
+        continue
+    avg_type = "weighted" if len(np.unique(y_test_safe)) > 2 else "binary"
+    metrics = {
+        "accuracy": accuracy_score(y_test_safe, preds),
+        "precision": precision_score(y_test_safe, preds, average=avg_type, zero_division=0),
+        "recall": recall_score(y_test_safe, preds, average=avg_type, zero_division=0),
+        "f1": f1_score(y_test_safe, preds, average=avg_type, zero_division=0),
+    }
+    health = compute_model_health(metrics)
+    metrics["health_score"] = health
+    metrics["training_mode"] = mode
+    st.session_state.trained_models[name] = model
+    st.session_state.leaderboard[name] = metrics
+    register_model(name, model, list(X_train_safe.columns), metrics)
+    if health > 80:
+        st.success(f"{name} healthy ({health})")
+    elif health > 60:
+        st.warning(f"{name} moderate ({health})")
+    else:
+        st.error(f"{name} weak ({health})")
+except Exception as e:
+    st.warning(f"Model registry failed: {e}")
             st.session_state.training_done = True
             st.success("Training Complete")
-        if len(st.session_state.leaderboard) > 0:
-            df_lb = pd.DataFrame(st.session_state.leaderboard).T
-            if "accuracy" in df_lb.columns:
-                df_lb = df_lb.sort_values("accuracy", ascending=False)
+if len(st.session_state.leaderboard) > 0:
+    df_lb = pd.DataFrame(st.session_state.leaderboard).T
+    if "health_score" in df_lb.columns:
+        df_lb = df_lb.sort_values("health_score", ascending=False)
+    st.dataframe(df_lb)
             st.dataframe(df_lb)
     except Exception as e:
         st.error("Training failed")
@@ -861,7 +915,7 @@ with tabs[5]:
                 X_shap = X_base.sample(min(len(X_base), 100), random_state=42)
                 # Create explainer if model supports predict_proba
                 if hasattr(model, "predict_proba"):
-                    explainer = shap.Explainer(model, X_train, feature_names=feature_names)
+                    explainer = shap.Explainer(model.predict, X_shap, feature_names=feature_names)
                 else:
                     # fallback: SHAP supports model directly for small numeric dataset
                     explainer = shap.Explainer(model, X_shap, feature_names=feature_names)
@@ -990,24 +1044,7 @@ def predict_jtyylsph_v63(model, X):
 # V6.3 GOVERNANCE MODEL (Torch)
 # ============================
 if TORCH_AVAILABLE_V63:
-    st.subheader("🧠 V6.3 Governance Model")
-    if st.button("Train V6.3 Model", key="v63_train"):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model_v63, history_v63 = train_jtyylsph_v63(
-            X_train,
-            y_train,
-            sensitive_feature=X_train.columns[0],
-            epochs=5,
-            device=device
-        )
-        preds = predict_jtyylsph_v63(model_v63, X_train)
-        acc = float((preds == y_train).mean())
-        # Save model
-        save_path = os.path.join(MODEL_DIR, "model_v63.pth")
-        torch.save(model_v63.state_dict(), save_path)
-        # Store
-        st.session_state.trained_models["V63_Governance"] = model_v63
-        st.session_state.leaderboard["V63_Governance"] = {"accuracy": acc}
+    st.session_state.leaderboard["V63_Governance"] = {"accuracy": acc}
         register_model(
             "V63_Governance",
             model_v63,
@@ -1036,14 +1073,6 @@ def load_v63_model(input_dim):
 try:
     if TORCH_AVAILABLE_V63:
         st.subheader("🧠 V6.3 Governance Model")
-        def predict_jtyylsph_v63(model, X):
-            model.eval()
-            with torch.no_grad():
-                X_tensor = torch.tensor(X.values.astype(np.float32)).to(
-                    next(model.parameters()).device
-                )
-                preds = model(X_tensor).squeeze().cpu().numpy()
-                return (preds > 0.5).astype(int)
         if st.button("Train V6.3 Model", key="v63_train_secondary"):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model_v63, history_v63 = train_jtyylsph_v63(
