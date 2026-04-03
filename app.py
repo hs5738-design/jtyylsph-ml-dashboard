@@ -160,10 +160,46 @@ model_choice = st.selectbox(
     "Select Model",
     ["RandomForest", "GradientBoosting", "LogisticRegression"]
 )
+from sklearn.preprocessing import LabelEncoder
+import pandas as pd
+# =============================
+# TARGET VALIDATION (CRITICAL FIX)
+# =============================
+if y.isna().any():
+    st.error("Target contains missing values.")
+    st.stop()
+unique_vals = pd.unique(y)
+st.write("Target dtype:", y.dtype)
+st.write("Unique target values:", unique_vals[:20])
+st.write("Number of unique classes:", len(unique_vals))
+# Detect classification safely
+is_classification = (
+    y.dtype == "object"
+    or str(y.dtype).startswith("category")
+    or len(unique_vals) <= 20
+)
+if is_classification:
+    st.info("Detected classification task")
+    # Encode if needed
+    if y.dtype == "object" or str(y.dtype).startswith("category"):
+        le = LabelEncoder()
+        y = le.fit_transform(y)
+else:
+    st.warning("Detected regression task — switching model")
+    from sklearn.ensemble import RandomForestRegressor
+    model = RandomForestRegressor()
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
+    st.success("Regression model trained successfully")
+    st.stop()
 
 # =============================
 # TRAIN
 # =============================
+st.write("Target dtype:", y.dtype)
+st.write("Unique target values:", y.unique()[:20])
+st.write("Number of unique classes:", len(pd.unique(y)))
+
 if st.button("Train Model"):
     if model_choice == "RandomForest":
         from sklearn.ensemble import RandomForestClassifier
@@ -270,4 +306,7 @@ X.columns = [str(c) for c in X.columns]
 st.write("Dataset Shape:", X.shape)
 st.write("### Dataset Summary")
 st.write(X.describe())
+
+
+ 
 
