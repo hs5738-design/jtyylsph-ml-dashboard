@@ -65,21 +65,6 @@ query = st.sidebar.text_area("SQL Query")
 # =============================
 # SIDEBAR INPUTS (DEFINE FIRST)
 # =============================
-domain = st.sidebar.selectbox(
-   "Synthetic Dataset",
-   ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
-)
-uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-uploaded_files = st.sidebar.file_uploader(
-   "Upload Dataset or Documents",
-   accept_multiple_files=True,
-   type=[
-       "csv", "xlsx", "json", "parquet",
-       "pdf", "docx", "txt", "log",
-       "xml", "sql",
-       "png", "jpg", "jpeg",
-   ],
-)
 # DATABASE
 st.sidebar.header("Database Connection")
 db_url = st.sidebar.text_input(
@@ -285,6 +270,4 @@ X.columns = [str(c) for c in X.columns]
 st.write("Dataset Shape:", X.shape)
 st.write("### Dataset Summary")
 st.write(X.describe())
-
-
 
