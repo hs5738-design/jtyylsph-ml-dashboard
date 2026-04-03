@@ -2,7 +2,7 @@
 
 import streamlit as st
 import pandas as pd
-
+from sklearn.datasets import make_classification
 from core import simulate_stream
 from report import generate_pdf_report
 from governance import (
