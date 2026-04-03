@@ -311,18 +311,15 @@ st.write("Dataset Shape:", X.shape)
 st.write("### Dataset Summary")
 st.write(X.describe())
 # =============================
-# 🤖 AI ASSISTANT (FINAL FIXED)
+# 🤖 AI ASSISTANT (WORKING)
 # =============================
 from openai import OpenAI
 import time
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.subheader("🤖 AI Governance Assistant")
-# Init memory
 if "messages" not in st.session_state:
     st.session_state.messages = []
-# =============================
-# Quick action buttons
-# =============================
+# Quick buttons
 col1, col2, col3 = st.columns(3)
 quick_prompt = None
 if col1.button("Explain Risk"):
@@ -331,21 +328,13 @@ if col2.button("Is model biased?"):
     quick_prompt = "Is this model biased?"
 if col3.button("Should I retrain?"):
     quick_prompt = "Should I retrain the model?"
-# =============================
-# Show chat history
-# =============================
+# Show chat
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-# =============================
 # Input
-# =============================
-st.info("Ask a question to start the AI assistant 👇")
 chat_input = st.chat_input("Ask about your model...")
 user_input = quick_prompt if quick_prompt else chat_input
-# =============================
-# Main chat logic
-# =============================
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
     # Build system context
@@ -353,44 +342,28 @@ if user_input:
     if st.session_state.metrics:
         drift, fairness, stability = st.session_state.metrics
         system_context += f"""
+        
         Current system metrics:
         - Drift: {round(drift,3)}
         - Fairness: {round(fairness,3)}
         - Stability: {round(stability,3)}
         Dataset shape: {X.shape}
-        Your job:
-        - Explain risks clearly
-        - Identify regulatory concerns
-        - Give actionable recommendations
         """
     else:
-        system_context += "\nNo model trained yet. Help user understand setup."
-    # =============================
-    # Smart overrides
-    # =============================
-    if "drift" in user_input.lower() and st.session_state.metrics:
-        reply = f"Current drift is {round(drift,3)} — {'HIGH RISK' if drift > 0.3 else 'normal'}"
-    elif "fairness" in user_input.lower() and st.session_state.metrics:
-        reply = f"Fairness score is {round(fairness,3)} — {'bias risk detected' if fairness > 0.1 else 'within acceptable range'}"
-    else:
-        # =============================
-        # OpenAI call (FIXED)
-        # =============================
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_context}
-                ] + st.session_state.messages
-            )
-            reply = response.choices[0].message.content
-        except Exception as e:
-            reply = f"⚠️ AI error: {str(e)}"
-    # Save response
+        system_context += "\nNo model trained yet. Help user set up model."
+    # Call AI
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_context}
+            ] + st.session_state.messages
+        )
+        reply = response.choices[0].message.content
+    except Exception as e:
+        reply = f"⚠️ AI error: {str(e)}"
     st.session_state.messages.append({"role": "assistant", "content": reply})
-    # =============================
-    # Typing animation
-    # =============================
+    # Typing effect
     with st.chat_message("assistant"):
         placeholder = st.empty()
         typed = ""
