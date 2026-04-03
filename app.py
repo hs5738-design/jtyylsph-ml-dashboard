@@ -1,18 +1,4 @@
 
-# ==========================
-# 🌙 DARK MODE TOGGLE
-# =============================
-dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=True)
-if dark_mode:
-    st.markdown("""
-        <style>
-        .stApp {
-            background-color: #0e1117;
-            color: white;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
 import streamlit as st
 import pandas as pd
 import numpy as np
