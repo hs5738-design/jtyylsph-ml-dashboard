@@ -16,3 +16,18 @@ pyarrow
 torch
 pytest
 reportlab
+sqlalchemy==2.0.29
+
+# Optional but recommended
+matplotlib==3.8.4
+seaborn==0.13.2
+
+# File handling (for uploads)
+openpyxl==3.1.2
+pyarrow==15.0.2
+
+# PDF generation (your report module likely needs this)
+reportlab==4.1.0
+
+# If you add AI chatbot later
+openai==1.30.1
