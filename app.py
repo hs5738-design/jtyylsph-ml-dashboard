@@ -1,122 +1,122 @@
-# =========================================================
-# AI Risk Stability Monitor — MVP VERSION
-# Clean • Deployable • Business Ready
-# =========================================================
+# app.py
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from scipy.stats import wasserstein_distance
+from core import simulate_stream, prepare_data, train_model, predict
+from report import generate_pdf_report
+from governance import (
+    compute_drift,
+    compute_fairness,
+    system_stability_score,
+    status_label
+)
 
-# =========================================================
-# UI TITLE
-# =========================================================
 st.title("🧠 AI Risk Stability Monitor")
-st.write("Detect model drift, fairness risk, and system stability in real time.")
 
-# =========================================================
+# =============================
+# SESSION STATE (CRITICAL)
+# =============================
+if "model" not in st.session_state:
+    st.session_state.model = None
+
+if "metrics" not in st.session_state:
+    st.session_state.metrics = None
+
+
+# =============================
 # FILE UPLOAD
-# =========================================================
-uploaded = st.file_uploader("Upload your dataset (CSV)", type=["csv"])
+# =============================
+uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded:
     df = pd.read_csv(uploaded)
-
-    st.write("### Preview")
     st.dataframe(df.head())
 
-    # =========================================================
-    # TARGET SELECTION
-    # =========================================================
     target = st.selectbox("Select Target Column", df.columns)
 
-    X = df.drop(columns=[target])
-    y = df[target]
+    X_train, X_test, y_train, y_test = prepare_data(df, target)
 
-    # Only numeric
-    X = X.select_dtypes(include=[np.number]).fillna(0)
+    # =============================
+    # TRAIN MODEL
+    # =============================
+    if st.button("Train Model"):
+        model = train_model(X_train, y_train)
+        preds = predict(model, X_test)
 
-    if len(X.columns) == 0:
-        st.error("No numeric features found.")
-        st.stop()
+        drift = compute_drift(X_train, X_test)
+        fairness = compute_fairness(preds, y_test)
+        stability = system_stability_score(drift, fairness)
 
-    # =========================================================
-    # TRAIN TEST SPLIT
-    # =========================================================
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+        # ✅ SAVE STATE
+        st.session_state.model = model
+        st.session_state.metrics = (drift, fairness, stability)
 
-    # =========================================================
-    # MODEL TRAINING
-    # =========================================================
-    model = RandomForestClassifier()
-    model.fit(X_train, y_train)
+    # =============================
+    # SHOW METRICS (if trained)
+    # =============================
+    if st.session_state.metrics:
+        drift, fairness, stability = st.session_state.metrics
 
-    preds = model.predict(X_test)
+        st.subheader("📊 Risk Dashboard")
 
-    # =========================================================
-    # METRICS
-    # =========================================================
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Drift", round(drift, 3), status_label(drift))
+        c2.metric("Fairness", round(fairness, 3), status_label(fairness))
+        c3.metric("Stability", round(stability, 3), status_label(1 - stability))
 
-    # Drift (simple)
-    drift = wasserstein_distance(
-        X_train.iloc[:, 0],
-        X_test.iloc[:, 0]
-    )
+        # =============================
+        # PDF DOWNLOAD
+        # =============================
+        if st.button("📄 Generate Report"):
+            file_path = generate_pdf_report(drift, fairness, stability)
 
-    # Fairness (simple proxy)
-    fairness_gap = abs(preds.mean() - y_test.mean())
+            with open(file_path, "rb") as f:
+                st.download_button(
+                    label="Download PDF",
+                    data=f,
+                    file_name="AI_Risk_Report.pdf",
+                    mime="application/pdf"
+                )
 
-    # Stability Score
-    def system_stability_score(drift, fairness):
-        return (
-            (1 - drift) * 0.5 +
-            (1 - fairness) * 0.5
-        )
+        # =============================
+        # INTERPRETATION
+        # =============================
+        st.subheader("🧾 Interpretation")
 
-    stability = system_stability_score(drift, fairness_gap)
+        if drift > 0.3:
+            st.warning("Drift detected — retrain model")
 
-    # =========================================================
-    # STATUS LABEL
-    # =========================================================
-    def status_label(value):
-        if value < 0.3:
-            return "🟢 Stable"
-        elif value < 0.6:
-            return "🟡 Warning"
+        if fairness > 0.1:
+            st.warning("Bias risk detected")
+
+        if stability < 0.5:
+            st.error("System unstable")
         else:
-            return "🔴 Critical"
+            st.success("System stable")
 
-    # =========================================================
-    # OUTPUT
-    # =========================================================
-    st.write("## 📊 Risk Dashboard")
+        # =============================
+        # REAL-TIME SIMULATION
+        # =============================
+        st.subheader("🧠 Real-Time Simulation")
 
-    col1, col2, col3 = st.columns(3)
+        if st.button("Start Simulation"):
 
-    col1.metric("Drift Score", round(drift, 3), status_label(drift))
-    col2.metric("Fairness Gap", round(fairness_gap, 3), status_label(fairness_gap))
-    col3.metric("System Stability", round(stability, 3), status_label(1 - stability))
+            chart = st.line_chart()
 
-    # =========================================================
-    # SIMPLE INTERPRETATION
-    # =========================================================
-    st.write("## 🧾 Interpretation")
+            model = st.session_state.model
 
-    if drift > 0.3:
-        st.warning("Model drift detected — retraining recommended.")
+            for step, current_data in simulate_stream(X_test):
 
-    if fairness_gap > 0.1:
-        st.warning("Potential bias detected — review model fairness.")
+                preds = model.predict(current_data)
 
-    if stability < 0.5:
-        st.error("System stability is low — immediate action required.")
-    else:
-        st.success("System operating within stable range.")
+                drift = compute_drift(X_train, current_data)
+                fairness = compute_fairness(preds, y_test)
+
+                chart.add_rows({
+                    "Drift": [drift],
+                    "Fairness": [fairness]
+                })
 
 else:
-    st.info("Upload a CSV file to begin.")
+    st.info("Upload a dataset to begin.")
