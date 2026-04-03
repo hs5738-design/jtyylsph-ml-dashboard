@@ -30,24 +30,146 @@ if "metrics" not in st.session_state:
 # SIDEBAR
 # =============================
 st.sidebar.header("Compliance Mode")
-
 jurisdiction = st.sidebar.selectbox(
-    "Regulatory Framework",
-    [
-        "US (SR 11-7)",
-        "EU AI Act",
-        "UK Model Risk",
-        "APAC Framework",
-        "Custom Policy",
-    ],
+   "Select Regulatory Framework",
+   [
+       "United States (SR 11-7)",
+       "European Union (EU AI Act)",
+       "UK Model Risk Guidance",
+       "APAC General Risk Framework",
+       "Custom Enterprise Policy",
+   ],
 )
 
-if jurisdiction == "EU AI Act":
-    st.warning("⚠ High-risk system — audit required")
 
-st.sidebar.header("Dataset Source")
+st.sidebar.header("Dataset")
+st.sidebar.header("Dataset Controls")
+
+
+domain = st.sidebar.selectbox(
+   "Synthetic Dataset",
+   ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
+)
+
 
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+
+
+if uploaded:
+   df = pd.read_csv(uploaded)
+   target_col = st.sidebar.selectbox("Target Column", df.columns)
+   X = df.drop(columns=[target_col])
+   y = df[target_col]
+else:
+   X_data, y_data = make_classification(
+       n_samples=500, n_features=6, random_state=42
+   )
+   X = pd.DataFrame(X_data)
+   y = pd.Series(y_data)
+
+
+X.columns = [str(c) for c in X.columns]
+feature_names = list(X.columns)
+st.session_state.feature_names = feature_names
+
+
+st.write("Dataset Shape:", X.shape)
+
+
+X_train, X_test, y_train, y_test = train_test_split(
+   X, y, test_size=0.2, random_state=42
+)
+
+
+uploaded_files = st.sidebar.file_uploader(
+   "Upload Dataset or Documents",
+   accept_multiple_files=True,
+   type=[
+       "csv", "xlsx", "json", "parquet",
+       "pdf", "docx", "txt", "log",
+       "xml", "sql",
+       "png", "jpg", "jpeg",
+   ],
+)
+
+# DATABASE
+st.sidebar.header("Database Connection")
+
+db_url = st.sidebar.text_input(
+    "SQLAlchemy DB URL",
+    placeholder="postgresql://user:pass@host:5432/db",
+    key="db_url"
+)
+
+query = st.sidebar.text_area(
+    "SQL Query",
+    placeholder="SELECT * FROM table LIMIT 100",
+    key="query"
+)
+
+if query:
+    if not query.strip().lower().startswith("select"):
+        st.error("Only SELECT queries allowed")
+        st.stop()
+# FILE INGESTION
+elif uploaded_files:
+   dataframes = []
+
+
+   for f in uploaded_files:
+       df = ingest_file(f)
+       if df is not None:
+           dataframes.append(df)
+
+
+   if dataframes:
+       df = pd.concat(dataframes, ignore_index=True, sort=False)
+       st.write("Combined Dataset")
+       st.dataframe(df)
+
+
+       if len(df.columns) > 1:
+           target_col = st.sidebar.selectbox("Target Column", df.columns)
+           X = df.drop(columns=[target_col])
+           y = df[target_col]
+       else:
+           X = df
+           y = np.random.randint(0, 2, len(df))
+
+
+# SYNTHETIC
+else:
+   X_data, y_data = make_classification(
+       n_samples=500, n_features=6, random_state=42
+   )
+   X = pd.DataFrame(X_data)
+   y = pd.Series(y_data)
+
+
+if X is None:
+   st.error("No valid dataset could be loaded.")
+   st.stop()
+
+
+X.columns = [str(c) for c in X.columns]
+feature_names = list(X.columns)
+st.session_state.feature_names = feature_names
+
+st.write("### Dataset Summary")
+st.write(X.describe())
+
+
+X_train, X_test, y_train, y_test = train_test_split(
+   X, y, test_size=0.2, random_state=42
+)
+
+
+st.write("### Data Quality Check")
+st.write("Missing Values")
+st.write(X.isna().sum())
+st.write("Duplicate Rows")
+st.write(X.duplicated().sum())
+
 
 # =============================
 # DATA LOADING
@@ -196,3 +318,4 @@ if st.session_state.metrics:
                 "Drift": [drift],
                 "Fairness": [fairness]
             })
+
