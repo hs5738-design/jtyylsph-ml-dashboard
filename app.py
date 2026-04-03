@@ -1,3 +1,5 @@
+Establishing rules and timing is like setting up a formation for the Qimen Dunjia, and creating a holographic AI linked to the Earth system to simulate the operation status and laws of celestial bodies
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -58,7 +60,6 @@ uploaded_files = st.sidebar.file_uploader(
     ],
 )
 st.sidebar.header("Database Connection")
-db_url = st.sidebar.text_input("SQLAlchemy DB URL")
 query = st.sidebar.text_area("SQL Query")
 
 # =============================
@@ -110,6 +111,18 @@ else:
     df = pd.DataFrame(X_data)
     df["target"] = y_data
     st.info(f"Using synthetic dataset: {domain}")
+def ingest_file(file):
+    try:
+        if file.name.endswith(".csv"):
+            return pd.read_csv(file)
+        elif file.name.endswith(".xlsx"):
+            return pd.read_excel(file)
+        elif file.name.endswith(".json"):
+            return pd.read_json(file)
+        else:
+            return None
+    except:
+        return None
 
 # =============================
 # TARGET SELECTION (UNIFIED)
@@ -131,13 +144,37 @@ st.write("### Dataset Summary")
 st.write(X.describe())
 
 # =============================
+# TARGET VALIDATION (MOVE HERE)
+# =============================
+from sklearn.preprocessing import LabelEncoder
+if y.isna().any():
+    st.error("Target contains missing values.")
+    st.stop()
+unique_vals = pd.unique(y)
+is_classification = (
+    y.dtype == "object"
+    or str(y.dtype).startswith("category")
+    or len(unique_vals) <= 20
+)
+if is_classification:
+    if y.dtype == "object" or str(y.dtype).startswith("category"):
+        y = LabelEncoder().fit_transform(y)
+else:
+    st.warning("Regression detected — switching model")
+    from sklearn.ensemble import RandomForestRegressor
+    model = RandomForestRegressor()
+    model.fit(X, y)
+    st.success("Regression model trained")
+    st.stop()
+
+# =============================
 # TRAIN TEST SPLIT
 # =============================
 from sklearn.model_selection import train_test_split
 
 X.columns = [str(c) for c in X.columns]
 
-X_train, X_test, y_train, y_test = train_test_split(
+X_train, X_test, y_train, y_test = train_test_split( 
     X, y, test_size=0.2, random_state=42
 )
 
@@ -161,37 +198,6 @@ model_choice = st.selectbox(
 )
 from sklearn.preprocessing import LabelEncoder
 import pandas as pd
-# =============================
-# TARGET VALIDATION (CRITICAL FIX)
-# =============================
-if y.isna().any():
-    st.error("Target contains missing values.")
-    st.stop()
-unique_vals = pd.unique(y)
-st.write("Target dtype:", y.dtype)
-st.write("Unique target values:", unique_vals[:20])
-st.write("Number of unique classes:", len(unique_vals))
-# Detect classification safely
-is_classification = (
-    y.dtype == "object"
-    or str(y.dtype).startswith("category")
-    or len(unique_vals) <= 20
-)
-if is_classification:
-    st.info("Detected classification task")
-    # Encode if needed
-    if y.dtype == "object" or str(y.dtype).startswith("category"):
-        le = LabelEncoder()
-        y = le.fit_transform(y)
-else:
-    st.warning("Detected regression task — switching model")
-    from sklearn.ensemble import RandomForestRegressor
-    model = RandomForestRegressor()
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
-    st.success("Regression model trained successfully")
-    st.stop()
-
 # =============================
 # TRAIN
 # =============================
@@ -306,38 +312,64 @@ st.write("Dataset Shape:", X.shape)
 st.write("### Dataset Summary")
 st.write(X.describe())
 # =============================
-# 🤖 AI ASSISTANT (FIXED)
+# 🤖 AI ASSISTANT (FINAL FIXED)
 # =============================
 from openai import OpenAI
+import time
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.subheader("🤖 AI Governance Assistant")
 # Init memory
 if "messages" not in st.session_state:
     st.session_state.messages = []
+# =============================
+# Quick action buttons
+# =============================
+col1, col2, col3 = st.columns(3)
+quick_prompt = None
+if col1.button("Explain Risk"):
+    quick_prompt = "Explain current system risk"
+if col2.button("Is model biased?"):
+    quick_prompt = "Is this model biased?"
+if col3.button("Should I retrain?"):
+    quick_prompt = "Should I retrain the model?"
+# =============================
 # Show chat history
+# =============================
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-# Input
+# =============================
+# Chat input
+# =============================
 user_input = st.chat_input("Ask about your model, drift, fairness...")
+# Combine button + chat input
+if quick_prompt:
+    user_input = quick_prompt
+# =============================
+# Main chat logic
+# =============================
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
     # =============================
-    # Inject system context (VERY IMPORTANT)
+    # Build system context safely
     # =============================
-    system_context = ""
+    system_context = "You are a senior AI risk officer."
     if st.session_state.metrics:
         drift, fairness, stability = st.session_state.metrics
-        system_context = f"""
-        You are an AI governance assistant.
+        system_context += f"""
+        
         Current system metrics:
         - Drift: {round(drift,3)}
         - Fairness: {round(fairness,3)}
         - Stability: {round(stability,3)}
-        Explain risks clearly and concisely.
+        Dataset shape: {X.shape}
+        Your job:
+        - Explain risks clearly
+        - Identify regulatory concerns
+        - Give actionable recommendations
         """
     # =============================
-    # Smart override (fast answers)
+    # Smart overrides (fast answers)
     # =============================
     if "drift" in user_input.lower() and st.session_state.metrics:
         reply = f"Current drift is {round(drift,3)} — {'HIGH RISK' if drift > 0.3 else 'normal'}"
@@ -354,10 +386,16 @@ if user_input:
             ] + st.session_state.messages
         )
         reply = response.choices[0].message.content
-    # Save + display
+    # Save response
     st.session_state.messages.append({"role": "assistant", "content": reply})
+    # =============================
+    # Typing animation (FIXED)
+    # =============================
     with st.chat_message("assistant"):
-        st.write(reply)
-
-
+        placeholder = st.empty()
+        typed = ""
+        for char in reply:
+            typed += char
+            placeholder.markdown(typed)
+            time.sleep(0.01)
 
