@@ -1,7 +1,8 @@
 # app.py
-
 import streamlit as st
 import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.datasets import make_classification
 from core import simulate_stream
 from report import generate_pdf_report
@@ -11,6 +12,7 @@ from governance import (
     system_stability_score,
     status_label
 )
+from audit import log_run, load_logs
 
 # =============================
 # PAGE TITLE
@@ -31,56 +33,43 @@ if "metrics" not in st.session_state:
 # =============================
 st.sidebar.header("Compliance Mode")
 jurisdiction = st.sidebar.selectbox(
-   "Select Regulatory Framework",
-   [
-       "United States (SR 11-7)",
-       "European Union (EU AI Act)",
-       "UK Model Risk Guidance",
-       "APAC General Risk Framework",
-       "Custom Enterprise Policy",
-   ],
+    "Select Regulatory Framework",
+    [
+        "United States (SR 11-7)",
+        "European Union (EU AI Act)",
+        "UK Model Risk Guidance",
+        "APAC General Risk Framework",
+        "Custom Enterprise Policy",
+    ],
 )
-
-
-st.sidebar.header("Dataset")
 st.sidebar.header("Dataset Controls")
+domain = st.sidebar.selectbox(
+    "Synthetic Dataset",
+    ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
+)
+uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+uploaded_files = st.sidebar.file_uploader(
+    "Upload Dataset or Documents",
+    accept_multiple_files=True,
+    type=[
+        "csv", "xlsx", "json", "parquet",
+        "pdf", "docx", "txt", "log",
+        "xml", "sql",
+        "png", "jpg", "jpeg",
+    ],
+)
+st.sidebar.header("Database Connection")
+db_url = st.sidebar.text_input("SQLAlchemy DB URL")
+query = st.sidebar.text_area("SQL Query")
 
-
+# =============================
+# SIDEBAR INPUTS (DEFINE FIRST)
+# =============================
 domain = st.sidebar.selectbox(
    "Synthetic Dataset",
    ["Finance", "Healthcare", "Sports", "Business", "Emotion", "General"]
 )
-
-
 uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-
-
-if uploaded:
-   df = pd.read_csv(uploaded)
-   target_col = st.sidebar.selectbox("Target Column", df.columns)
-   X = df.drop(columns=[target_col])
-   y = df[target_col]
-else:
-   X_data, y_data = make_classification(
-       n_samples=500, n_features=6, random_state=42
-   )
-   X = pd.DataFrame(X_data)
-   y = pd.Series(y_data)
-
-
-X.columns = [str(c) for c in X.columns]
-feature_names = list(X.columns)
-st.session_state.feature_names = feature_names
-
-
-st.write("Dataset Shape:", X.shape)
-
-
-X_train, X_test, y_train, y_test = train_test_split(
-   X, y, test_size=0.2, random_state=42
-)
-
-
 uploaded_files = st.sidebar.file_uploader(
    "Upload Dataset or Documents",
    accept_multiple_files=True,
@@ -91,108 +80,71 @@ uploaded_files = st.sidebar.file_uploader(
        "png", "jpg", "jpeg",
    ],
 )
-
 # DATABASE
 st.sidebar.header("Database Connection")
-
 db_url = st.sidebar.text_input(
     "SQLAlchemy DB URL",
-    placeholder="postgresql://user:pass@host:5432/db",
-    key="db_url"
+    placeholder="postgresql://user:pass@host:5432/db"
 )
-
 query = st.sidebar.text_area(
     "SQL Query",
-    placeholder="SELECT * FROM table LIMIT 100",
-    key="query"
+    placeholder="SELECT * FROM table LIMIT 100"
 )
 
-if query:
-    if not query.strip().lower().startswith("select"):
-        st.error("Only SELECT queries allowed")
+# =============================
+# DATA SOURCE PRIORITY SYSTEM
+# =============================
+X, y = None, None
+if query and db_url:
+    from sqlalchemy import create_engine
+    try:
+        engine = create_engine(db_url)
+        df = pd.read_sql(query, engine)
+        st.write("Database Data")
+        st.dataframe(df.head())
+    except Exception as e:
+        st.error(f"Database error: {e}")
         st.stop()
-# FILE INGESTION
 elif uploaded_files:
-   dataframes = []
-
-
-   for f in uploaded_files:
-       df = ingest_file(f)
-       if df is not None:
-           dataframes.append(df)
-
-
-   if dataframes:
-       df = pd.concat(dataframes, ignore_index=True, sort=False)
-       st.write("Combined Dataset")
-       st.dataframe(df)
-
-
-       if len(df.columns) > 1:
-           target_col = st.sidebar.selectbox("Target Column", df.columns)
-           X = df.drop(columns=[target_col])
-           y = df[target_col]
-       else:
-           X = df
-           y = np.random.randint(0, 2, len(df))
-
-
-# SYNTHETIC
-else:
-   X_data, y_data = make_classification(
-       n_samples=500, n_features=6, random_state=42
-   )
-   X = pd.DataFrame(X_data)
-   y = pd.Series(y_data)
-
-
-if X is None:
-   st.error("No valid dataset could be loaded.")
-   st.stop()
-
-
-X.columns = [str(c) for c in X.columns]
-feature_names = list(X.columns)
-st.session_state.feature_names = feature_names
-
-st.write("### Dataset Summary")
-st.write(X.describe())
-
-
-X_train, X_test, y_train, y_test = train_test_split(
-   X, y, test_size=0.2, random_state=42
-)
-
-
-st.write("### Data Quality Check")
-st.write("Missing Values")
-st.write(X.isna().sum())
-st.write("Duplicate Rows")
-st.write(X.duplicated().sum())
-
-
-# =============================
-# DATA LOADING
-# =============================
-if uploaded:
+    dfs = []
+    for f in uploaded_files:
+        df_part = ingest_file(f)
+        if df_part is not None:
+            dfs.append(df_part)
+    if dfs:
+        df = pd.concat(dfs, ignore_index=True, sort=False)
+        st.write("Combined Dataset")
+        st.dataframe(df.head())
+elif uploaded:
     df = pd.read_csv(uploaded)
-    st.write("Uploaded Dataset Preview")
+    st.write("Uploaded Dataset")
     st.dataframe(df.head())
-
-    target_col = st.sidebar.selectbox("Target Column", df.columns)
-
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
-
 else:
-    from sklearn.datasets import make_classification
-
     X_data, y_data = make_classification(
         n_samples=500, n_features=6, random_state=42
     )
+    df = pd.DataFrame(X_data)
+    df["target"] = y_data
+    st.info(f"Using synthetic dataset: {domain}")
 
-    X = pd.DataFrame(X_data)
-    y = pd.Series(y_data)
+# =============================
+# TARGET SELECTION (UNIFIED)
+# =============================
+if 'df' in locals():
+    if len(df.columns) > 1:
+        target_col = st.sidebar.selectbox("Target Column", df.columns)
+        X = df.drop(columns=[target_col])
+        y = df[target_col]
+    else:
+        X = df
+        y = pd.Series(np.random.randint(0, 2, len(df)))
+if X is None or len(X) == 0:
+    st.error("No valid dataset loaded.")
+    st.stop()
+X.columns = [str(c) for c in X.columns]
+st.write("Dataset Shape:", X.shape)
+st.write("### Dataset Summary")
+st.write(X.describe())
 
 # =============================
 # TRAIN TEST SPLIT
@@ -228,29 +180,30 @@ model_choice = st.selectbox(
 # TRAIN
 # =============================
 if st.button("Train Model"):
-
     if model_choice == "RandomForest":
         from sklearn.ensemble import RandomForestClassifier
         model = RandomForestClassifier()
-
     elif model_choice == "GradientBoosting":
         from sklearn.ensemble import GradientBoostingClassifier
         model = GradientBoostingClassifier()
-
     else:
         from sklearn.linear_model import LogisticRegression
         model = LogisticRegression(max_iter=1000)
-
     model.fit(X_train, y_train)
-
     preds = model.predict(X_test)
-
     drift = compute_drift(X_train, X_test)
     fairness = compute_fairness(preds, y_test)
     stability = system_stability_score(drift, fairness)
-
     st.session_state.model = model
     st.session_state.metrics = (drift, fairness, stability)
+    # ✅ FIXED: log inside training
+    log_run(
+        model_choice,
+        drift,
+        fairness,
+        stability,
+        jurisdiction
+    )
 
 # =============================
 # SHOW RESULTS (PERSISTENT)
@@ -295,7 +248,7 @@ if st.session_state.metrics:
         st.error("🔴 HIGH RISK SYSTEM")
     else:
         st.success("System stable")
-
+  
     # =============================
     # REAL-TIME SIMULATION
     # =============================
@@ -318,4 +271,20 @@ if st.session_state.metrics:
                 "Drift": [drift],
                 "Fairness": [fairness]
             })
+st.subheader("📜 Audit Log")
+logs = load_logs()
+if logs:
+    df_logs = pd.DataFrame(logs)
+    st.dataframe(df_logs)
+else:
+    st.info("No audit logs yet.")
+if X is None or len(X) == 0:
+    st.error("No valid dataset loaded.")
+    st.stop()
+X.columns = [str(c) for c in X.columns]
+st.write("Dataset Shape:", X.shape)
+st.write("### Dataset Summary")
+st.write(X.describe())
+
+
 
