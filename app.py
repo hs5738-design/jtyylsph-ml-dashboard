@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -337,25 +338,21 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 # =============================
-# Chat input
+# Input
 # =============================
-user_input = st.chat_input("Ask about your model, drift, fairness...")
-# Combine button + chat input
-if quick_prompt:
-    user_input = quick_prompt
+st.info("Ask a question to start the AI assistant 👇")
+chat_input = st.chat_input("Ask about your model...")
+user_input = quick_prompt if quick_prompt else chat_input
 # =============================
 # Main chat logic
 # =============================
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
-    # =============================
-    # Build system context safely
-    # =============================
+    # Build system context
     system_context = "You are a senior AI risk officer."
     if st.session_state.metrics:
         drift, fairness, stability = st.session_state.metrics
         system_context += f"""
-        
         Current system metrics:
         - Drift: {round(drift,3)}
         - Fairness: {round(fairness,3)}
@@ -366,8 +363,10 @@ if user_input:
         - Identify regulatory concerns
         - Give actionable recommendations
         """
+    else:
+        system_context += "\nNo model trained yet. Help user understand setup."
     # =============================
-    # Smart overrides (fast answers)
+    # Smart overrides
     # =============================
     if "drift" in user_input.lower() and st.session_state.metrics:
         reply = f"Current drift is {round(drift,3)} — {'HIGH RISK' if drift > 0.3 else 'normal'}"
@@ -375,19 +374,22 @@ if user_input:
         reply = f"Fairness score is {round(fairness,3)} — {'bias risk detected' if fairness > 0.1 else 'within acceptable range'}"
     else:
         # =============================
-        # OpenAI call
+        # OpenAI call (FIXED)
         # =============================
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_context}
-            ] + st.session_state.messages
-        )
-        reply = response.choices[0].message.content
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_context}
+                ] + st.session_state.messages
+            )
+            reply = response.choices[0].message.content
+        except Exception as e:
+            reply = f"⚠️ AI error: {str(e)}"
     # Save response
     st.session_state.messages.append({"role": "assistant", "content": reply})
     # =============================
-    # Typing animation (FIXED)
+    # Typing animation
     # =============================
     with st.chat_message("assistant"):
         placeholder = st.empty()
@@ -396,4 +398,5 @@ if user_input:
             typed += char
             placeholder.markdown(typed)
             time.sleep(0.01)
+
 
