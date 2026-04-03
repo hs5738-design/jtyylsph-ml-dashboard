@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -306,7 +305,59 @@ X.columns = [str(c) for c in X.columns]
 st.write("Dataset Shape:", X.shape)
 st.write("### Dataset Summary")
 st.write(X.describe())
+# =============================
+# 🤖 AI ASSISTANT (FIXED)
+# =============================
+from openai import OpenAI
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+st.subheader("🤖 AI Governance Assistant")
+# Init memory
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+# Show chat history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+# Input
+user_input = st.chat_input("Ask about your model, drift, fairness...")
+if user_input:
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    # =============================
+    # Inject system context (VERY IMPORTANT)
+    # =============================
+    system_context = ""
+    if st.session_state.metrics:
+        drift, fairness, stability = st.session_state.metrics
+        system_context = f"""
+        You are an AI governance assistant.
+        Current system metrics:
+        - Drift: {round(drift,3)}
+        - Fairness: {round(fairness,3)}
+        - Stability: {round(stability,3)}
+        Explain risks clearly and concisely.
+        """
+    # =============================
+    # Smart override (fast answers)
+    # =============================
+    if "drift" in user_input.lower() and st.session_state.metrics:
+        reply = f"Current drift is {round(drift,3)} — {'HIGH RISK' if drift > 0.3 else 'normal'}"
+    elif "fairness" in user_input.lower() and st.session_state.metrics:
+        reply = f"Fairness score is {round(fairness,3)} — {'bias risk detected' if fairness > 0.1 else 'within acceptable range'}"
+    else:
+        # =============================
+        # OpenAI call
+        # =============================
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_context}
+            ] + st.session_state.messages
+        )
+        reply = response.choices[0].message.content
+    # Save + display
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+    with st.chat_message("assistant"):
+        st.write(reply)
 
 
- 
 
