@@ -1,4 +1,18 @@
 
+# ==========================
+# 🌙 DARK MODE TOGGLE
+# =============================
+dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=True)
+if dark_mode:
+    st.markdown("""
+        <style>
+        .stApp {
+            background-color: #0e1117;
+            color: white;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -310,66 +324,3 @@ X.columns = [str(c) for c in X.columns]
 st.write("Dataset Shape:", X.shape)
 st.write("### Dataset Summary")
 st.write(X.describe())
-# =============================
-# 🤖 AI ASSISTANT (WORKING)
-# =============================
-from openai import OpenAI
-import time
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-st.subheader("🤖 AI Governance Assistant")
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-# Quick buttons
-col1, col2, col3 = st.columns(3)
-quick_prompt = None
-if col1.button("Explain Risk"):
-    quick_prompt = "Explain current system risk"
-if col2.button("Is model biased?"):
-    quick_prompt = "Is this model biased?"
-if col3.button("Should I retrain?"):
-    quick_prompt = "Should I retrain the model?"
-# Show chat
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
-# Input
-chat_input = st.chat_input("Ask about your model...")
-user_input = quick_prompt if quick_prompt else chat_input
-if user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    # Build system context
-    system_context = "You are a senior AI risk officer."
-    if st.session_state.metrics:
-        drift, fairness, stability = st.session_state.metrics
-        system_context += f"""
-        
-        Current system metrics:
-        - Drift: {round(drift,3)}
-        - Fairness: {round(fairness,3)}
-        - Stability: {round(stability,3)}
-        Dataset shape: {X.shape}
-        """
-    else:
-        system_context += "\nNo model trained yet. Help user set up model."
-    # Call AI
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_context}
-            ] + st.session_state.messages
-        )
-        reply = response.choices[0].message.content
-    except Exception as e:
-        reply = f"⚠️ AI error: {str(e)}"
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-    # Typing effect
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        typed = ""
-        for char in reply:
-            typed += char
-            placeholder.markdown(typed)
-            time.sleep(0.01)
-
-
