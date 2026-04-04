@@ -9,7 +9,8 @@ from sklearn.datasets import make_classification
 from sklearn.preprocessing import LabelEncoder
 from openai import OpenAI
 import time
-
+import os
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # =============================
 # CUSTOM MODULES
 # =============================
