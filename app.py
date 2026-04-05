@@ -1,4 +1,3 @@
-Establishing rules and timing is like setting up a formation for the Qimen Dunjia, and creating a holographic AI linked to the Earth system to simulate the operation status and laws of celestial bodies
 # =============================
 # 🚀 JTYYLSPH — AI Governance Platform
 # =============================
@@ -13,14 +12,32 @@ import time
 # =============================
 # CUSTOM MODULES
 # =============================
-try:
-    from core import simulate_stream
-    from report import generate_pdf_report
-    from governance import compute_drift, compute_fairness, system_stability_score, status_label
-    from audit import log_run, load_logs
-except ModuleNotFoundError as e:
-    st.error(f"Missing module: {e}")
-    st.stop()
+# TEMP SAFE MODE (to debug deployment)
+
+def simulate_stream(X):
+    for i in range(5):
+        yield i, X.sample(min(10, len(X)))
+
+def generate_pdf_report(d, f, s):
+    return None
+
+def compute_drift(a, b):
+    return 0.1
+
+def compute_fairness(preds, y):
+    return 0.05
+
+def system_stability_score(d, f):
+    return 1 - (d + f)
+
+def status_label(x):
+    return "OK"
+
+def log_run(*args, **kwargs):
+    pass
+
+def load_logs():
+    return []
 # =============================
 # FUNCTIONS
 # =============================
@@ -244,6 +261,8 @@ else:
 st.subheader("🤖 AI Governance Assistant")
 
 import os
+from openai import OpenAI
+
 api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 if not api_key:
